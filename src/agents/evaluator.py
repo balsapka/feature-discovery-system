@@ -93,7 +93,6 @@ Be rigorous but fair. Look for:
 
 IMPORTANT: Return valid JSON matching this schema:
 {{
-    "rubric": <the rubric object>,
     "feature_scores": [
         {{
             "feature_name": "name",

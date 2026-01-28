@@ -48,7 +48,6 @@ class FeatureScore(BaseModel):
 
 class FeatureEvaluation(BaseModel):
     """Complete evaluation of all features."""
-    rubric: EvaluationRubric
     feature_scores: List[FeatureScore]
     improvement_suggested: bool = Field(
         description="Whether another iteration would improve results"
