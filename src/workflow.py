@@ -1,15 +1,30 @@
 """
 LangGraph workflow orchestration for the Feature Discovery System.
 """
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, Any, Optional, Literal, TypedDict, List, Annotated
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+import operator
 import os
 from dotenv import load_dotenv
 
 from .agents import FeatureGeneratorAgent, EvaluatorAgent
-from .models.schemas import WorkflowState
+from .models.schemas import WorkflowState, Feature, EvaluationRubric, FeatureScore
+
+
+class GraphState(TypedDict):
+    """State schema for the workflow graph."""
+    business_problem: str
+    current_features: Optional[List[Feature]]
+    rubric: Optional[EvaluationRubric]
+    evaluations: Optional[List[FeatureScore]]
+    iteration: int
+    max_iterations: int
+    converged: bool
+    final_output: Optional[Dict[str, Any]]
+    improvement_recommendations: Optional[str]
+    taxonomy_explanation: str
 
 
 class FeatureDiscoveryWorkflow:
@@ -83,7 +98,7 @@ class FeatureDiscoveryWorkflow:
         """Build the LangGraph workflow."""
         
         # Create the graph with our state schema
-        workflow = StateGraph(dict)
+        workflow = StateGraph(GraphState)
         
         # Add nodes
         workflow.add_node("generate", self._generate_node)
