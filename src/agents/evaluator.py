@@ -13,8 +13,6 @@ from ..models.schemas import (
     RubricCriterion,
     FeatureEvaluation,
     FeatureScore,
-    CompactFeatureEvaluation,
-    CompactFeatureScore
 )
 
 
@@ -770,8 +768,6 @@ Score as JSON."""
         # Include data type distribution to maintain variety
         low_scoring_type_counts = {}
         if should_continue and low_scoring_features:
-            low_scoring_names = [f.name for f in low_scoring_features]
-
             # Count data types of low-scoring features
             for f in low_scoring_features:
                 dtype = str(f.data_type.value) if hasattr(f.data_type, 'value') else str(f.data_type)

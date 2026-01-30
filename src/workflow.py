@@ -1,16 +1,15 @@
 """
 LangGraph workflow orchestration for the Feature Discovery System.
 """
-from typing import Dict, Any, Optional, Literal, TypedDict, List, Annotated
+from typing import Dict, Any, Optional, Literal, TypedDict, List
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-import operator
 import os
 from dotenv import load_dotenv
 
 from .agents import FeatureGeneratorAgent, EvaluatorAgent, SummarizerAgent
-from .models.schemas import WorkflowState, Feature, EvaluationRubric, FeatureScore
+from .models.schemas import Feature, EvaluationRubric, FeatureScore
 
 
 class GraphState(TypedDict):

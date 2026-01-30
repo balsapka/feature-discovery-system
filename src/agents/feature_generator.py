@@ -1,12 +1,11 @@
 """
 Feature Generator Agent - Generates candidate features from business problems.
 """
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from ..models.schemas import GeneratorOutput, CompactGeneratorOutput, Feature, CompactFeature, DataType
+from ..models.schemas import GeneratorOutput, CompactGeneratorOutput, Feature, CompactFeature
 
 
 class FeatureGeneratorAgent:
