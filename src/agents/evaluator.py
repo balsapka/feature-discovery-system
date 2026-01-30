@@ -298,6 +298,7 @@ Score as JSON."""
     def _parse_compact_evaluation(self, result: dict, features: List[Feature]) -> FeatureEvaluation:
         """
         Parse compact evaluation result with robust fallbacks.
+        Uses positional matching since features are sent in order.
 
         Args:
             result: Raw dict from LLM
@@ -313,61 +314,65 @@ Score as JSON."""
         if not raw_scores and "feature_scores" in result:
             raw_scores = result.get("feature_scores", [])
 
-        # Parse each score individually, skipping malformed ones
-        for i, score_data in enumerate(raw_scores):
-            try:
-                if isinstance(score_data, dict):
-                    # Try different field names for score
-                    score_val = score_data.get("score", score_data.get("overall_score"))
-                    name_val = score_data.get("name", score_data.get("feature_name"))
+        # Debug: show what we got
+        print(f"Debug: Received {len(raw_scores)} scores from LLM for {len(features)} features")
 
-                    # Skip if essential fields are missing or invalid
-                    if score_val is None or name_val is None:
-                        print(f"Warning: Skipping malformed score entry at index {i}: {score_data}")
-                        continue
+        # Use POSITIONAL matching - LLM returns scores in the same order as features
+        # This is more reliable than name matching which can fail due to slight differences
+        for i, feature in enumerate(features):
+            if i < len(raw_scores):
+                score_data = raw_scores[i]
+                try:
+                    if isinstance(score_data, dict):
+                        # Try different field names for score
+                        score_val = score_data.get("score", score_data.get("overall_score", 5.0))
 
-                    # Ensure score is a valid number
-                    try:
-                        score_float = float(score_val)
-                    except (ValueError, TypeError):
-                        print(f"Warning: Invalid score value at index {i}: {score_val}")
-                        continue
+                        # Ensure score is a valid number
+                        try:
+                            score_float = float(score_val)
+                        except (ValueError, TypeError):
+                            print(f"Warning: Invalid score value at index {i}: {score_val}, using default")
+                            score_float = 5.0
 
+                        feature_scores.append(FeatureScore(
+                            feature_name=feature.name,  # Use actual feature name
+                            criterion_scores={},
+                            overall_score=score_float,
+                            feedback=""
+                        ))
+                    elif isinstance(score_data, (int, float)):
+                        # Handle case where LLM just returns array of numbers
+                        feature_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=float(score_data),
+                            feedback=""
+                        ))
+                    else:
+                        print(f"Warning: Unexpected score format at index {i}: {type(score_data)}")
+                        feature_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=5.0,
+                            feedback="Could not parse score"
+                        ))
+                except Exception as e:
+                    print(f"Warning: Failed to parse score at index {i}: {e}")
                     feature_scores.append(FeatureScore(
-                        feature_name=str(name_val),
-                        criterion_scores={},
-                        overall_score=score_float,
-                        feedback=""
-                    ))
-            except Exception as e:
-                print(f"Warning: Failed to parse score at index {i}: {e}")
-                continue
-
-        # If we got some scores but not all, that's okay - we parsed what we could
-        if feature_scores:
-            parsed_names = {fs.feature_name for fs in feature_scores}
-            missing_features = [f for f in features if f.name not in parsed_names]
-            if missing_features:
-                print(f"Warning: Missing scores for {len(missing_features)} features, using defaults")
-                for f in missing_features:
-                    feature_scores.append(FeatureScore(
-                        feature_name=f.name,
+                        feature_name=feature.name,
                         criterion_scores={},
                         overall_score=5.0,
-                        feedback="Score not parsed from LLM response"
+                        feedback="Parse error"
                     ))
-        else:
-            # No scores extracted at all, create defaults for all features
-            print(f"Warning: No scores extracted, creating defaults for {len(features)} features")
-            feature_scores = [
-                FeatureScore(
-                    feature_name=f.name,
+            else:
+                # No score for this feature, use default
+                print(f"Warning: No score at index {i} for feature '{feature.name}'")
+                feature_scores.append(FeatureScore(
+                    feature_name=feature.name,
                     criterion_scores={},
                     overall_score=5.0,
-                    feedback="Unable to parse evaluation"
-                )
-                for f in features
-            ]
+                    feedback="No score returned by LLM"
+                ))
 
         # Extract continue flag - try multiple possible field names
         continue_flag = result.get("continue", result.get("continue_", False))
@@ -375,6 +380,9 @@ Score as JSON."""
             continue_flag = continue_flag.lower() in ("true", "yes", "1")
 
         feedback = result.get("feedback", result.get("improvement_recommendations"))
+
+        avg_score = sum(fs.overall_score for fs in feature_scores) / len(feature_scores) if feature_scores else 0
+        print(f"Debug: Average score: {avg_score:.2f}, continue: {continue_flag}")
 
         return FeatureEvaluation(
             feature_scores=feature_scores,
@@ -405,7 +413,7 @@ Score as JSON."""
         """
 
         if self.compact_mode:
-            # Compact feature list
+            # Compact feature list - number them for clarity
             features_text = ", ".join([f.name for f in features])
 
             chain = self.evaluation_prompt | self.llm | self.evaluation_parser
@@ -415,6 +423,14 @@ Score as JSON."""
                 "iteration": iteration + 1,
                 "max_iterations": max_iterations
             })
+
+            # Debug: show raw result
+            print(f"Debug: Raw LLM result keys: {result.keys() if isinstance(result, dict) else type(result)}")
+            if isinstance(result, dict):
+                scores = result.get("scores", [])
+                print(f"Debug: scores field has {len(scores)} items")
+                if scores and len(scores) > 0:
+                    print(f"Debug: First score entry: {scores[0]}")
 
             return self._parse_compact_evaluation(result, features)
         else:
