@@ -390,6 +390,88 @@ Score as JSON."""
             improvement_recommendations=feedback
         )
 
+    def _evaluate_batch_compact(
+        self,
+        business_problem: str,
+        features: List[Feature],
+        iteration: int,
+        max_iterations: int
+    ) -> List[FeatureScore]:
+        """
+        Evaluate a single batch of features in compact mode.
+
+        Args:
+            business_problem: The business problem context
+            features: Batch of features to evaluate
+            iteration: Current iteration number
+            max_iterations: Maximum allowed iterations
+
+        Returns:
+            List of FeatureScore objects
+        """
+        features_text = ", ".join([f.name for f in features])
+
+        chain = self.evaluation_prompt | self.llm | self.evaluation_parser
+        result = chain.invoke({
+            "business_problem": business_problem,
+            "features": features_text,
+            "iteration": iteration + 1,
+            "max_iterations": max_iterations
+        })
+
+        # Parse scores from this batch
+        raw_scores = result.get("scores", [])
+        if not raw_scores and "feature_scores" in result:
+            raw_scores = result.get("feature_scores", [])
+
+        batch_scores = []
+        for i, feature in enumerate(features):
+            if i < len(raw_scores):
+                score_data = raw_scores[i]
+                try:
+                    if isinstance(score_data, dict):
+                        score_val = score_data.get("score", score_data.get("overall_score", 5.0))
+                        try:
+                            score_float = float(score_val)
+                        except (ValueError, TypeError):
+                            score_float = 5.0
+                        batch_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=score_float,
+                            feedback=""
+                        ))
+                    elif isinstance(score_data, (int, float)):
+                        batch_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=float(score_data),
+                            feedback=""
+                        ))
+                    else:
+                        batch_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=5.0,
+                            feedback="Could not parse"
+                        ))
+                except Exception:
+                    batch_scores.append(FeatureScore(
+                        feature_name=feature.name,
+                        criterion_scores={},
+                        overall_score=5.0,
+                        feedback="Parse error"
+                    ))
+            else:
+                batch_scores.append(FeatureScore(
+                    feature_name=feature.name,
+                    criterion_scores={},
+                    overall_score=5.0,
+                    feedback="No score returned"
+                ))
+
+        return batch_scores
+
     def evaluate_features(
         self,
         business_problem: str,
@@ -413,26 +495,51 @@ Score as JSON."""
         """
 
         if self.compact_mode:
-            # Compact feature list - number them for clarity
-            features_text = ", ".join([f.name for f in features])
+            # Batch evaluation for compact mode to avoid LLM output truncation
+            BATCH_SIZE = 10
+            all_scores = []
 
-            chain = self.evaluation_prompt | self.llm | self.evaluation_parser
-            result = chain.invoke({
-                "business_problem": business_problem,
-                "features": features_text,
-                "iteration": iteration + 1,
-                "max_iterations": max_iterations
-            })
+            if len(features) > BATCH_SIZE:
+                print(f"Debug: Evaluating {len(features)} features in batches of {BATCH_SIZE}")
+                for batch_start in range(0, len(features), BATCH_SIZE):
+                    batch_end = min(batch_start + BATCH_SIZE, len(features))
+                    batch = features[batch_start:batch_end]
+                    print(f"Debug: Evaluating batch {batch_start//BATCH_SIZE + 1}: features {batch_start+1}-{batch_end}")
 
-            # Debug: show raw result
-            print(f"Debug: Raw LLM result keys: {result.keys() if isinstance(result, dict) else type(result)}")
-            if isinstance(result, dict):
-                scores = result.get("scores", [])
-                print(f"Debug: scores field has {len(scores)} items")
-                if scores and len(scores) > 0:
-                    print(f"Debug: First score entry: {scores[0]}")
+                    batch_scores = self._evaluate_batch_compact(
+                        business_problem, batch, iteration, max_iterations
+                    )
+                    all_scores.extend(batch_scores)
+                    print(f"Debug: Batch returned {len(batch_scores)} scores")
 
-            return self._parse_compact_evaluation(result, features)
+                # For batched evaluation, determine continue flag based on average score
+                avg_score = sum(fs.overall_score for fs in all_scores) / len(all_scores) if all_scores else 0
+                should_continue = avg_score < 7.0 and iteration < max_iterations - 1
+                print(f"Debug: Total {len(all_scores)} scores, avg: {avg_score:.2f}, continue: {should_continue}")
+
+                return FeatureEvaluation(
+                    feature_scores=all_scores,
+                    improvement_suggested=should_continue,
+                    improvement_recommendations="Continue improving low-scoring features" if should_continue else None
+                )
+            else:
+                # Single batch - use original logic
+                features_text = ", ".join([f.name for f in features])
+
+                chain = self.evaluation_prompt | self.llm | self.evaluation_parser
+                result = chain.invoke({
+                    "business_problem": business_problem,
+                    "features": features_text,
+                    "iteration": iteration + 1,
+                    "max_iterations": max_iterations
+                })
+
+                print(f"Debug: Raw LLM result keys: {result.keys() if isinstance(result, dict) else type(result)}")
+                if isinstance(result, dict):
+                    scores = result.get("scores", [])
+                    print(f"Debug: scores field has {len(scores)} items")
+
+                return self._parse_compact_evaluation(result, features)
         else:
             # Full feature details
             features_text = "\n\n".join([
