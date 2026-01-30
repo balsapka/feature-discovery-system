@@ -15,12 +15,35 @@ class DataType(str, Enum):
 
 
 class Feature(BaseModel):
-    """Represents a candidate feature."""
+    """Represents a candidate feature (full schema)."""
     name: str = Field(description="Name of the feature")
     description: str = Field(description="Detailed description of what the feature represents")
     data_type: DataType = Field(description="Type of data this feature comes from")
     taxonomy: str = Field(description="Category/taxonomy classification")
     rationale: str = Field(description="Why this feature is relevant to the business problem")
+
+
+class CompactFeature(BaseModel):
+    """Represents a candidate feature (compact schema for faster generation)."""
+    name: str = Field(description="Feature name")
+    desc: str = Field(description="Brief description (max 15 words)")
+    type: str = Field(description="Data type: structured, time_series, unstructured, or external")
+
+    def to_feature(self) -> "Feature":
+        """Convert compact feature to full Feature."""
+        type_map = {
+            "structured": DataType.STRUCTURED,
+            "time_series": DataType.TIME_SERIES,
+            "unstructured": DataType.UNSTRUCTURED,
+            "external": DataType.EXTERNAL,
+        }
+        return Feature(
+            name=self.name,
+            description=self.desc,
+            data_type=type_map.get(self.type, DataType.STRUCTURED),
+            taxonomy="",
+            rationale=""
+        )
 
 
 class RubricCriterion(BaseModel):
@@ -46,6 +69,21 @@ class FeatureScore(BaseModel):
     feedback: str = Field(description="Qualitative feedback for improvement")
 
 
+class CompactFeatureScore(BaseModel):
+    """Score for a single feature (compact mode)."""
+    name: str
+    score: float = Field(description="Overall score 0-10")
+
+    def to_feature_score(self) -> "FeatureScore":
+        """Convert to full FeatureScore."""
+        return FeatureScore(
+            feature_name=self.name,
+            criterion_scores={},
+            overall_score=self.score,
+            feedback=""
+        )
+
+
 class FeatureEvaluation(BaseModel):
     """Complete evaluation of all features."""
     feature_scores: List[FeatureScore]
@@ -58,12 +96,24 @@ class FeatureEvaluation(BaseModel):
     )
 
 
+class CompactFeatureEvaluation(BaseModel):
+    """Complete evaluation of all features (compact mode)."""
+    scores: List[CompactFeatureScore]
+    continue_: bool = Field(alias="continue", description="Whether to continue iterating")
+    feedback: Optional[str] = Field(default=None, description="Brief feedback for next iteration")
+
+
 class GeneratorOutput(BaseModel):
     """Output from the Feature Generator Agent."""
     features: List[Feature]
     taxonomy_explanation: str = Field(
         description="Explanation of the taxonomy structure used"
     )
+
+
+class CompactGeneratorOutput(BaseModel):
+    """Output from the Feature Generator Agent (compact mode)."""
+    features: List[CompactFeature]
 
 
 class WorkflowState(BaseModel):

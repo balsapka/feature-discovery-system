@@ -9,13 +9,15 @@ import operator
 import os
 from dotenv import load_dotenv
 
-from .agents import FeatureGeneratorAgent, EvaluatorAgent
+from .agents import FeatureGeneratorAgent, EvaluatorAgent, SummarizerAgent
 from .models.schemas import WorkflowState, Feature, EvaluationRubric, FeatureScore
 
 
 class GraphState(TypedDict):
     """State schema for the workflow graph."""
     business_problem: str
+    business_problem_original: Optional[str]
+    business_problem_summarized: Optional[str]
     current_features: Optional[List[Feature]]
     rubric: Optional[EvaluationRubric]
     evaluations: Optional[List[FeatureScore]]
@@ -39,31 +41,38 @@ class FeatureDiscoveryWorkflow:
         model_name: Optional[str] = None,
         max_iterations: int = 3,
         temperature: float = 0.7,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        compact_mode: bool = False,
+        parallel: bool = False
     ):
         """
         Initialize the workflow.
-        
+
         Args:
             llm_provider: 'openai' or 'anthropic'
             model_name: Specific model name (e.g., 'claude-sonnet-4-5-20250929', 'gpt-4')
             max_iterations: Maximum number of generator-evaluator iterations
             temperature: LLM temperature for generation
             api_key: Optional API key (otherwise loads from .env)
+            compact_mode: If True, use minimal prompts/schemas for faster execution
+            parallel: If True, generate features in parallel batches (~2x speedup)
         """
         load_dotenv()
-        
+
         self.llm_provider = llm_provider
         self.max_iterations = max_iterations
         self.temperature = temperature
-        
+        self.compact_mode = compact_mode
+        self.parallel = parallel
+
         # Initialize LLM
         self.llm = self._initialize_llm(llm_provider, model_name, api_key)
-        
+
         # Initialize agents
-        self.generator = FeatureGeneratorAgent(self.llm)
-        self.evaluator = EvaluatorAgent(self.llm)
-        
+        self.summarizer = SummarizerAgent(self.llm)
+        self.generator = FeatureGeneratorAgent(self.llm, compact_mode=compact_mode, parallel=parallel)
+        self.evaluator = EvaluatorAgent(self.llm, compact_mode=compact_mode)
+
         # Build the graph
         self.graph = self._build_graph()
     
@@ -96,17 +105,19 @@ class FeatureDiscoveryWorkflow:
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow."""
-        
+
         # Create the graph with our state schema
         workflow = StateGraph(GraphState)
-        
+
         # Add nodes
+        workflow.add_node("summarize", self._summarize_node)
         workflow.add_node("generate", self._generate_node)
         workflow.add_node("evaluate", self._evaluate_node)
         workflow.add_node("finalize", self._finalize_node)
-        
-        # Add edges
-        workflow.set_entry_point("generate")
+
+        # Add edges - start with summarization
+        workflow.set_entry_point("summarize")
+        workflow.add_edge("summarize", "generate")
         workflow.add_edge("generate", "evaluate")
         
         # Conditional edge: either continue iterating or finalize
@@ -123,13 +134,25 @@ class FeatureDiscoveryWorkflow:
         
         return workflow.compile()
     
+    def _summarize_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Node for summarizing long business problems."""
+        return self.summarizer(state)
+
     def _generate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for feature generation."""
-        return self.generator(state)
+        # Use summarized version for generation
+        gen_state = state.copy()
+        if state.get("business_problem_summarized"):
+            gen_state["business_problem"] = state["business_problem_summarized"]
+        return self.generator(gen_state)
     
     def _evaluate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for feature evaluation."""
-        return self.evaluator(state)
+        # Use summarized version for evaluation
+        eval_state = state.copy()
+        if state.get("business_problem_summarized"):
+            eval_state["business_problem"] = state["business_problem_summarized"]
+        return self.evaluator(eval_state)
     
     def _finalize_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for finalizing results."""
@@ -182,6 +205,8 @@ class FeatureDiscoveryWorkflow:
         # Initialize state
         initial_state = {
             "business_problem": business_problem,
+            "business_problem_original": None,
+            "business_problem_summarized": None,
             "current_features": None,
             "rubric": None,
             "evaluations": None,
