@@ -82,16 +82,18 @@ class EvaluatorAgent:
     Uses an evaluator-optimizer pattern to iteratively improve feature quality.
     """
 
-    def __init__(self, llm, compact_mode: bool = False):
+    def __init__(self, llm, compact_mode: bool = False, score_threshold: float = 7.0):
         """
         Initialize the Evaluator Agent.
 
         Args:
             llm: Language model instance (OpenAI or Anthropic)
             compact_mode: If True, use minimal schema for faster evaluation
+            score_threshold: Minimum average score to stop iterating (default 7.0)
         """
         self.llm = llm
         self.compact_mode = compact_mode
+        self.score_threshold = score_threshold
 
         if compact_mode:
             # Use robust parser for compact mode to handle malformed JSON
@@ -596,8 +598,22 @@ Score as JSON."""
 
                 # For batched evaluation, determine continue flag based on average score
                 avg_score = sum(fs.overall_score for fs in all_scores) / len(all_scores) if all_scores else 0
-                should_continue = avg_score < 7.0 and iteration < max_iterations - 1
-                print(f"Debug: Total {len(all_scores)} scores, avg: {avg_score:.2f}, continue: {should_continue}")
+                should_continue = avg_score < self.score_threshold and iteration < max_iterations - 1
+
+                print(f"\n{'='*60}")
+                print(f"EVALUATION SUMMARY - Iteration {iteration + 1}/{max_iterations}")
+                print(f"{'='*60}")
+                print(f"Features evaluated: {len(all_scores)}")
+                print(f"Average score: {avg_score:.2f} (threshold: {self.score_threshold})")
+                print(f"Decision: {'CONTINUE iterating' if should_continue else 'STOP - converged or max iterations'}")
+                if should_continue:
+                    print(f"Reason: avg score {avg_score:.2f} < threshold {self.score_threshold}")
+                else:
+                    if avg_score >= self.score_threshold:
+                        print(f"Reason: avg score {avg_score:.2f} >= threshold {self.score_threshold}")
+                    else:
+                        print(f"Reason: reached max iterations ({max_iterations})")
+                print(f"{'='*60}\n")
 
                 return FeatureEvaluation(
                     feature_scores=all_scores,
@@ -641,8 +657,22 @@ Score as JSON."""
 
                 # Determine continue flag based on average score
                 avg_score = sum(fs.overall_score for fs in all_scores) / len(all_scores) if all_scores else 0
-                should_continue = avg_score < 7.0 and iteration < max_iterations - 1
-                print(f"Debug: Total {len(all_scores)} scores, avg: {avg_score:.2f}, continue: {should_continue}")
+                should_continue = avg_score < self.score_threshold and iteration < max_iterations - 1
+
+                print(f"\n{'='*60}")
+                print(f"EVALUATION SUMMARY - Iteration {iteration + 1}/{max_iterations}")
+                print(f"{'='*60}")
+                print(f"Features evaluated: {len(all_scores)}")
+                print(f"Average score: {avg_score:.2f} (threshold: {self.score_threshold})")
+                print(f"Decision: {'CONTINUE iterating' if should_continue else 'STOP - converged or max iterations'}")
+                if should_continue:
+                    print(f"Reason: avg score {avg_score:.2f} < threshold {self.score_threshold}")
+                else:
+                    if avg_score >= self.score_threshold:
+                        print(f"Reason: avg score {avg_score:.2f} >= threshold {self.score_threshold}")
+                    else:
+                        print(f"Reason: reached max iterations ({max_iterations})")
+                print(f"{'='*60}\n")
 
                 return FeatureEvaluation(
                     feature_scores=all_scores,

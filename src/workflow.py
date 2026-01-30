@@ -43,7 +43,8 @@ class FeatureDiscoveryWorkflow:
         temperature: float = 0.7,
         api_key: Optional[str] = None,
         compact_mode: bool = False,
-        parallel: bool = False
+        parallel: bool = False,
+        score_threshold: float = 7.0
     ):
         """
         Initialize the workflow.
@@ -56,6 +57,7 @@ class FeatureDiscoveryWorkflow:
             api_key: Optional API key (otherwise loads from .env)
             compact_mode: If True, use minimal prompts/schemas for faster execution
             parallel: If True, generate features in parallel batches (~2x speedup)
+            score_threshold: Minimum average score to stop iterating (default 7.0)
         """
         load_dotenv()
 
@@ -64,6 +66,7 @@ class FeatureDiscoveryWorkflow:
         self.temperature = temperature
         self.compact_mode = compact_mode
         self.parallel = parallel
+        self.score_threshold = score_threshold
 
         # Initialize LLM
         self.llm = self._initialize_llm(llm_provider, model_name, api_key)
@@ -71,7 +74,7 @@ class FeatureDiscoveryWorkflow:
         # Initialize agents
         self.summarizer = SummarizerAgent(self.llm)
         self.generator = FeatureGeneratorAgent(self.llm, compact_mode=compact_mode, parallel=parallel)
-        self.evaluator = EvaluatorAgent(self.llm, compact_mode=compact_mode)
+        self.evaluator = EvaluatorAgent(self.llm, compact_mode=compact_mode, score_threshold=score_threshold)
 
         # Build the graph
         self.graph = self._build_graph()
@@ -140,14 +143,30 @@ class FeatureDiscoveryWorkflow:
 
     def _generate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for feature generation."""
+        iteration = state.get("iteration", 0)
+        print(f"\n{'#'*60}")
+        print(f"# GENERATION PHASE - Iteration {iteration + 1}/{state.get('max_iterations', self.max_iterations)}")
+        print(f"{'#'*60}")
+
+        if iteration > 0:
+            print(f"Previous feedback: {state.get('improvement_recommendations', 'None')}")
+
         # Use summarized version for generation
         gen_state = state.copy()
         if state.get("business_problem_summarized"):
             gen_state["business_problem"] = state["business_problem_summarized"]
-        return self.generator(gen_state)
-    
+
+        result = self.generator(gen_state)
+        print(f"Generated {len(result.get('current_features', []))} features")
+        return result
+
     def _evaluate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for feature evaluation."""
+        iteration = state.get("iteration", 0)
+        print(f"\n{'#'*60}")
+        print(f"# EVALUATION PHASE - Iteration {iteration + 1}/{state.get('max_iterations', self.max_iterations)}")
+        print(f"{'#'*60}")
+
         # Use summarized version for evaluation
         eval_state = state.copy()
         if state.get("business_problem_summarized"):
@@ -169,20 +188,22 @@ class FeatureDiscoveryWorkflow:
         return {"final_output": final_output, "converged": True}
     
     def _should_continue(
-        self, 
+        self,
         state: Dict[str, Any]
     ) -> Literal["continue", "finalize"]:
         """
         Decide whether to continue iterating or finalize.
-        
+
         Args:
             state: Current workflow state
-            
+
         Returns:
             "continue" if should iterate, "finalize" if done
         """
         if state["converged"] or state["iteration"] >= self.max_iterations:
+            print(f"\n>>> WORKFLOW DECISION: FINALIZE (converged={state['converged']}, iteration={state['iteration']}/{self.max_iterations})")
             return "finalize"
+        print(f"\n>>> WORKFLOW DECISION: CONTINUE to iteration {state['iteration'] + 1}")
         return "continue"
     
     def run(self, business_problem: str, verbose: bool = False) -> Dict[str, Any]:
