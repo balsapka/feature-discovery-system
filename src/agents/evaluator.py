@@ -1,9 +1,12 @@
 """
 Evaluator Agent - Creates rubrics and evaluates generated features.
 """
+import json
+import re
 from typing import Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import JsonOutputParser, BaseOutputParser
+from langchain_core.exceptions import OutputParserException
 from ..models.schemas import (
     Feature,
     EvaluationRubric,
@@ -13,6 +16,64 @@ from ..models.schemas import (
     CompactFeatureEvaluation,
     CompactFeatureScore
 )
+
+
+class RobustJsonOutputParser(BaseOutputParser[dict]):
+    """
+    A more robust JSON parser that can handle malformed JSON,
+    especially truncated arrays at the end.
+    """
+
+    def parse(self, text: str) -> dict:
+        """Parse LLM output, attempting to fix common JSON issues."""
+        # First try standard parsing
+        try:
+            # Extract JSON from markdown code blocks if present
+            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+            if json_match:
+                text = json_match.group(1)
+
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Try to fix common issues
+        fixed_text = self._fix_json(text)
+        try:
+            return json.loads(fixed_text)
+        except json.JSONDecodeError as e:
+            raise OutputParserException(f"Failed to parse JSON: {e}\nText: {text[:500]}")
+
+    def _fix_json(self, text: str) -> str:
+        """Attempt to fix common JSON formatting issues."""
+        # Remove any leading/trailing whitespace
+        text = text.strip()
+
+        # Extract JSON object if wrapped in other text
+        json_match = re.search(r'\{[\s\S]*\}', text)
+        if json_match:
+            text = json_match.group(0)
+
+        # Fix trailing commas in arrays (common LLM issue)
+        text = re.sub(r',\s*\]', ']', text)
+        text = re.sub(r',\s*\}', '}', text)
+
+        # Try to fix truncated array elements - remove incomplete last element
+        # Pattern: looks for incomplete object at end of array
+        text = re.sub(r',\s*\{[^}]*$', '', text)
+
+        # Ensure proper closing brackets
+        open_braces = text.count('{') - text.count('}')
+        open_brackets = text.count('[') - text.count(']')
+
+        text += '}' * max(0, open_braces)
+        text += ']' * max(0, open_brackets)
+
+        return text
+
+    @property
+    def _type(self) -> str:
+        return "robust_json"
 
 
 class EvaluatorAgent:
@@ -33,7 +94,8 @@ class EvaluatorAgent:
         self.compact_mode = compact_mode
 
         if compact_mode:
-            self.evaluation_parser = JsonOutputParser(pydantic_object=CompactFeatureEvaluation)
+            # Use robust parser for compact mode to handle malformed JSON
+            self.evaluation_parser = RobustJsonOutputParser()
             self.evaluation_prompt = self._create_compact_evaluation_prompt()
             # In compact mode, use a simple default rubric instead of generating one
             self.default_rubric = EvaluationRubric(
@@ -233,6 +295,93 @@ Score as JSON."""
         result = chain.invoke({"business_problem": business_problem})
         return EvaluationRubric(**result)
 
+    def _parse_compact_evaluation(self, result: dict, features: List[Feature]) -> FeatureEvaluation:
+        """
+        Parse compact evaluation result with robust fallbacks.
+
+        Args:
+            result: Raw dict from LLM
+            features: List of features being evaluated (for fallback)
+
+        Returns:
+            FeatureEvaluation object
+        """
+        feature_scores = []
+        raw_scores = result.get("scores", [])
+
+        # Handle case where scores might be nested differently
+        if not raw_scores and "feature_scores" in result:
+            raw_scores = result.get("feature_scores", [])
+
+        # Parse each score individually, skipping malformed ones
+        for i, score_data in enumerate(raw_scores):
+            try:
+                if isinstance(score_data, dict):
+                    # Try different field names for score
+                    score_val = score_data.get("score", score_data.get("overall_score"))
+                    name_val = score_data.get("name", score_data.get("feature_name"))
+
+                    # Skip if essential fields are missing or invalid
+                    if score_val is None or name_val is None:
+                        print(f"Warning: Skipping malformed score entry at index {i}: {score_data}")
+                        continue
+
+                    # Ensure score is a valid number
+                    try:
+                        score_float = float(score_val)
+                    except (ValueError, TypeError):
+                        print(f"Warning: Invalid score value at index {i}: {score_val}")
+                        continue
+
+                    feature_scores.append(FeatureScore(
+                        feature_name=str(name_val),
+                        criterion_scores={},
+                        overall_score=score_float,
+                        feedback=""
+                    ))
+            except Exception as e:
+                print(f"Warning: Failed to parse score at index {i}: {e}")
+                continue
+
+        # If we got some scores but not all, that's okay - we parsed what we could
+        if feature_scores:
+            parsed_names = {fs.feature_name for fs in feature_scores}
+            missing_features = [f for f in features if f.name not in parsed_names]
+            if missing_features:
+                print(f"Warning: Missing scores for {len(missing_features)} features, using defaults")
+                for f in missing_features:
+                    feature_scores.append(FeatureScore(
+                        feature_name=f.name,
+                        criterion_scores={},
+                        overall_score=5.0,
+                        feedback="Score not parsed from LLM response"
+                    ))
+        else:
+            # No scores extracted at all, create defaults for all features
+            print(f"Warning: No scores extracted, creating defaults for {len(features)} features")
+            feature_scores = [
+                FeatureScore(
+                    feature_name=f.name,
+                    criterion_scores={},
+                    overall_score=5.0,
+                    feedback="Unable to parse evaluation"
+                )
+                for f in features
+            ]
+
+        # Extract continue flag - try multiple possible field names
+        continue_flag = result.get("continue", result.get("continue_", False))
+        if isinstance(continue_flag, str):
+            continue_flag = continue_flag.lower() in ("true", "yes", "1")
+
+        feedback = result.get("feedback", result.get("improvement_recommendations"))
+
+        return FeatureEvaluation(
+            feature_scores=feature_scores,
+            improvement_suggested=bool(continue_flag),
+            improvement_recommendations=feedback
+        )
+
     def evaluate_features(
         self,
         business_problem: str,
@@ -267,14 +416,7 @@ Score as JSON."""
                 "max_iterations": max_iterations
             })
 
-            # Convert compact result to full format
-            compact_eval = CompactFeatureEvaluation(**result)
-            feature_scores = [s.to_feature_score() for s in compact_eval.scores]
-            return FeatureEvaluation(
-                feature_scores=feature_scores,
-                improvement_suggested=compact_eval.continue_,
-                improvement_recommendations=compact_eval.feedback
-            )
+            return self._parse_compact_evaluation(result, features)
         else:
             # Full feature details
             features_text = "\n\n".join([
