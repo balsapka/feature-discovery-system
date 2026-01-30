@@ -472,6 +472,88 @@ Score as JSON."""
 
         return batch_scores
 
+    def _evaluate_batch_full(
+        self,
+        business_problem: str,
+        features: List[Feature],
+        rubric: EvaluationRubric,
+        iteration: int,
+        max_iterations: int
+    ) -> List[FeatureScore]:
+        """
+        Evaluate a single batch of features in full mode.
+
+        Args:
+            business_problem: The business problem context
+            features: Batch of features to evaluate
+            rubric: The evaluation rubric
+            iteration: Current iteration number
+            max_iterations: Maximum allowed iterations
+
+        Returns:
+            List of FeatureScore objects
+        """
+        features_text = "\n\n".join([
+            f"Feature: {f.name}\n"
+            f"Description: {f.description}\n"
+            f"Data Type: {f.data_type}\n"
+            f"Taxonomy: {f.taxonomy}\n"
+            f"Rationale: {f.rationale}"
+            for f in features
+        ])
+
+        rubric_text = f"Criteria:\n" + "\n".join([
+            f"- {c.name} (weight: {c.weight}): {c.description}"
+            for c in rubric.criteria
+        ])
+
+        chain = self.evaluation_prompt | self.llm | self.evaluation_parser
+        result = chain.invoke({
+            "business_problem": business_problem,
+            "rubric": rubric_text,
+            "features": features_text,
+            "iteration": iteration + 1,
+            "max_iterations": max_iterations
+        })
+
+        # Parse scores using positional matching
+        batch_scores = []
+        raw_scores = result.get("feature_scores", [])
+
+        for i, feature in enumerate(features):
+            if i < len(raw_scores):
+                score_data = raw_scores[i]
+                try:
+                    if isinstance(score_data, dict):
+                        score_data.setdefault("feature_name", feature.name)
+                        score_data.setdefault("criterion_scores", {})
+                        score_data.setdefault("overall_score", 5.0)
+                        score_data.setdefault("feedback", "")
+                        batch_scores.append(FeatureScore(**score_data))
+                    else:
+                        batch_scores.append(FeatureScore(
+                            feature_name=feature.name,
+                            criterion_scores={},
+                            overall_score=5.0,
+                            feedback="Could not parse"
+                        ))
+                except Exception:
+                    batch_scores.append(FeatureScore(
+                        feature_name=feature.name,
+                        criterion_scores={},
+                        overall_score=5.0,
+                        feedback="Parse error"
+                    ))
+            else:
+                batch_scores.append(FeatureScore(
+                    feature_name=feature.name,
+                    criterion_scores={},
+                    overall_score=5.0,
+                    feedback="No score returned"
+                ))
+
+        return batch_scores
+
     def evaluate_features(
         self,
         business_problem: str,
@@ -493,10 +575,10 @@ Score as JSON."""
         Returns:
             FeatureEvaluation with scores and recommendations
         """
+        BATCH_SIZE = 10
 
         if self.compact_mode:
             # Batch evaluation for compact mode to avoid LLM output truncation
-            BATCH_SIZE = 10
             all_scores = []
 
             if len(features) > BATCH_SIZE:
@@ -541,32 +623,58 @@ Score as JSON."""
 
                 return self._parse_compact_evaluation(result, features)
         else:
-            # Full feature details
-            features_text = "\n\n".join([
-                f"Feature: {f.name}\n"
-                f"Description: {f.description}\n"
-                f"Data Type: {f.data_type}\n"
-                f"Taxonomy: {f.taxonomy}\n"
-                f"Rationale: {f.rationale}"
-                for f in features
-            ])
+            # Full mode - also batch if too many features
+            if len(features) > BATCH_SIZE:
+                print(f"Debug: [Full mode] Evaluating {len(features)} features in batches of {BATCH_SIZE}")
+                all_scores = []
 
-            # Format rubric
-            rubric_text = f"Criteria:\n" + "\n".join([
-                f"- {c.name} (weight: {c.weight}): {c.description}"
-                for c in rubric.criteria
-            ])
+                for batch_start in range(0, len(features), BATCH_SIZE):
+                    batch_end = min(batch_start + BATCH_SIZE, len(features))
+                    batch = features[batch_start:batch_end]
+                    print(f"Debug: Evaluating batch {batch_start//BATCH_SIZE + 1}: features {batch_start+1}-{batch_end}")
 
-            chain = self.evaluation_prompt | self.llm | self.evaluation_parser
-            result = chain.invoke({
-                "business_problem": business_problem,
-                "rubric": rubric_text,
-                "features": features_text,
-                "iteration": iteration + 1,
-                "max_iterations": max_iterations
-            })
+                    batch_scores = self._evaluate_batch_full(
+                        business_problem, batch, rubric, iteration, max_iterations
+                    )
+                    all_scores.extend(batch_scores)
+                    print(f"Debug: Batch returned {len(batch_scores)} scores")
 
-            return self._parse_evaluation_result(result, features)
+                # Determine continue flag based on average score
+                avg_score = sum(fs.overall_score for fs in all_scores) / len(all_scores) if all_scores else 0
+                should_continue = avg_score < 7.0 and iteration < max_iterations - 1
+                print(f"Debug: Total {len(all_scores)} scores, avg: {avg_score:.2f}, continue: {should_continue}")
+
+                return FeatureEvaluation(
+                    feature_scores=all_scores,
+                    improvement_suggested=should_continue,
+                    improvement_recommendations="Continue improving low-scoring features" if should_continue else None
+                )
+            else:
+                # Single batch - original logic
+                features_text = "\n\n".join([
+                    f"Feature: {f.name}\n"
+                    f"Description: {f.description}\n"
+                    f"Data Type: {f.data_type}\n"
+                    f"Taxonomy: {f.taxonomy}\n"
+                    f"Rationale: {f.rationale}"
+                    for f in features
+                ])
+
+                rubric_text = f"Criteria:\n" + "\n".join([
+                    f"- {c.name} (weight: {c.weight}): {c.description}"
+                    for c in rubric.criteria
+                ])
+
+                chain = self.evaluation_prompt | self.llm | self.evaluation_parser
+                result = chain.invoke({
+                    "business_problem": business_problem,
+                    "rubric": rubric_text,
+                    "features": features_text,
+                    "iteration": iteration + 1,
+                    "max_iterations": max_iterations
+                })
+
+                return self._parse_evaluation_result(result, features)
 
     def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
