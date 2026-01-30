@@ -34,6 +34,20 @@ Your task is to condense a long business problem description into a concise summ
 2. Key business context and constraints
 3. Target variable and timeframe
 4. Important domain-specific details
+5. **CRITICAL: Any explicit feature recommendations or suggestions from the user**
+
+PAY SPECIAL ATTENTION to any phrases like:
+- "consider features such as..."
+- "important features include..."
+- "make sure to include..."
+- "features like X, Y, Z..."
+- "don't forget about..."
+- "key indicators are..."
+- "we should look at..."
+- Any explicit mention of data sources, metrics, or variables the user wants included
+
+If the user explicitly recommends specific features or data sources, you MUST include a dedicated section:
+"USER-REQUESTED FEATURES: [list the specific features/data mentioned by the user]"
 
 Keep the summary under 300 words. Focus on information relevant for feature engineering.
 Output ONLY the summary, no preamble or explanation."""
@@ -41,7 +55,7 @@ Output ONLY the summary, no preamble or explanation."""
         human_message = """Business Problem:
 {business_problem}
 
-Provide a concise summary:"""
+Provide a concise summary (remember to preserve any explicit feature recommendations):"""
 
         return ChatPromptTemplate.from_messages([
             ("system", system_message),

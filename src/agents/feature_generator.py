@@ -53,6 +53,10 @@ Given a business problem, you should:
 4. Create a clear taxonomy to organize the features
 5. Provide rationale for why each feature is relevant
 
+**CRITICAL: If the business problem contains a "USER-REQUESTED FEATURES" section or explicitly mentions
+specific features/data sources the user wants, you MUST include those features FIRST in your output.
+These are non-negotiable requirements from the user.**
+
 Focus on feature concepts that would be found in a banking Feature Store.
 
 IMPORTANT: Your response must be valid JSON matching this exact schema:
@@ -123,6 +127,9 @@ Generate {focus_area} features as JSON."""
         """Create the prompt template for feature generation (compact mode)."""
 
         system_message = """You are a data scientist. Generate feature names for predictive modeling.
+
+**CRITICAL: If the problem mentions "USER-REQUESTED FEATURES" or specific features the user wants,
+include those FIRST. These are mandatory requirements.**
 
 Output JSON with this EXACT format:
 {{
