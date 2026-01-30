@@ -90,14 +90,23 @@ Provide a concise summary:"""
         """
         business_problem = state["business_problem"]
 
+        print(f"\n{'#'*60}")
+        print(f"# SUMMARIZATION PHASE")
+        print(f"{'#'*60}")
+        print(f"Original problem length: {len(business_problem)} chars (threshold: {self.CHAR_THRESHOLD})")
+
         if self.should_summarize(business_problem):
+            print("Summarizing business problem...")
             summarized = self.summarize(business_problem)
+            print(f"Summarized to: {len(summarized)} chars")
+            print(f"\nSummarized problem:\n{summarized}")
             return {
                 "business_problem_original": business_problem,
                 "business_problem_summarized": summarized,
             }
         else:
             # No summarization needed, use original
+            print("No summarization needed, using original")
             return {
                 "business_problem_original": business_problem,
                 "business_problem_summarized": business_problem,

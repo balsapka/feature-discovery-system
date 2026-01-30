@@ -154,6 +154,10 @@ class FeatureDiscoveryWorkflow:
         print(f"# GENERATION PHASE - Iteration {iteration + 1}/{state.get('max_iterations', self.max_iterations)}")
         print(f"{'#'*60}")
 
+        # Show summarized business problem on first iteration
+        if iteration == 0 and state.get("business_problem_summarized"):
+            print(f"Business Problem (summarized): {state['business_problem_summarized']}")
+
         if iteration > 0:
             if kept_features and low_scoring_count:
                 print(f"Mode: REGENERATION - keeping {len(kept_features)} features, generating {low_scoring_count} replacements")
