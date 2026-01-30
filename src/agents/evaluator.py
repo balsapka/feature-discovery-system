@@ -736,16 +736,65 @@ Score as JSON."""
             max_iterations
         )
 
+        # Separate high-scoring and low-scoring features
+        kept_features = []
+        low_scoring_features = []
+
+        for i, score in enumerate(evaluation.feature_scores):
+            if i < len(features):
+                if score.overall_score >= self.score_threshold:
+                    kept_features.append(features[i])
+                else:
+                    low_scoring_features.append(features[i])
+
+        low_scoring_count = len(low_scoring_features)
+
+        # Log the separation
+        print(f"\n--- Feature Scoring Summary ---")
+        print(f"Features above threshold ({self.score_threshold}): {len(kept_features)}")
+        print(f"Features below threshold: {low_scoring_count}")
+        if kept_features:
+            print(f"Kept features: {[f.name for f in kept_features]}")
+        if low_scoring_features:
+            print(f"To regenerate: {[f.name for f in low_scoring_features]}")
+        print(f"-------------------------------\n")
+
         # Determine if we should continue iterating
+        # Continue if there are low-scoring features AND we haven't reached max iterations
         should_continue = (
-            evaluation.improvement_suggested and
+            low_scoring_count > 0 and
             iteration < max_iterations - 1
         )
+
+        # Build improvement recommendations from low-scoring feature feedback
+        # Include data type distribution to maintain variety
+        low_scoring_type_counts = {}
+        if should_continue and low_scoring_features:
+            low_scoring_names = [f.name for f in low_scoring_features]
+
+            # Count data types of low-scoring features
+            for f in low_scoring_features:
+                dtype = str(f.data_type.value) if hasattr(f.data_type, 'value') else str(f.data_type)
+                low_scoring_type_counts[dtype] = low_scoring_type_counts.get(dtype, 0) + 1
+
+            # Build detailed recommendations with type distribution
+            type_info = ", ".join([f"{count} {dtype}" for dtype, count in low_scoring_type_counts.items()])
+            recommendations = f"Replace {low_scoring_count} low-scoring features ({type_info}). "
+            recommendations += f"Maintain data type variety: generate replacements with similar type distribution. "
+            if evaluation.improvement_recommendations:
+                recommendations += evaluation.improvement_recommendations
+
+            print(f"Low-scoring feature types: {low_scoring_type_counts}")
+        else:
+            recommendations = evaluation.improvement_recommendations
 
         return {
             "rubric": rubric,
             "evaluations": evaluation.feature_scores,
-            "improvement_recommendations": evaluation.improvement_recommendations,
+            "improvement_recommendations": recommendations,
+            "kept_features": kept_features,
+            "low_scoring_count": low_scoring_count,
+            "low_scoring_type_counts": low_scoring_type_counts if low_scoring_type_counts else None,
             "converged": not should_continue,
             "iteration": iteration + 1
         }

@@ -19,6 +19,7 @@ class GraphState(TypedDict):
     business_problem_original: Optional[str]
     business_problem_summarized: Optional[str]
     current_features: Optional[List[Feature]]
+    kept_features: Optional[List[Feature]]  # High-scoring features to keep
     rubric: Optional[EvaluationRubric]
     evaluations: Optional[List[FeatureScore]]
     iteration: int
@@ -26,6 +27,8 @@ class GraphState(TypedDict):
     converged: bool
     final_output: Optional[Dict[str, Any]]
     improvement_recommendations: Optional[str]
+    low_scoring_count: Optional[int]  # Number of features to regenerate
+    low_scoring_type_counts: Optional[Dict[str, int]]  # Data type distribution of low-scoring features
     taxonomy_explanation: str
 
 
@@ -144,12 +147,17 @@ class FeatureDiscoveryWorkflow:
     def _generate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for feature generation."""
         iteration = state.get("iteration", 0)
+        kept_features = state.get("kept_features", [])
+        low_scoring_count = state.get("low_scoring_count", 0)
+
         print(f"\n{'#'*60}")
         print(f"# GENERATION PHASE - Iteration {iteration + 1}/{state.get('max_iterations', self.max_iterations)}")
         print(f"{'#'*60}")
 
         if iteration > 0:
-            print(f"Previous feedback: {state.get('improvement_recommendations', 'None')}")
+            if kept_features and low_scoring_count:
+                print(f"Mode: REGENERATION - keeping {len(kept_features)} features, generating {low_scoring_count} replacements")
+            print(f"Feedback: {state.get('improvement_recommendations', 'None')}")
 
         # Use summarized version for generation
         gen_state = state.copy()
@@ -157,7 +165,7 @@ class FeatureDiscoveryWorkflow:
             gen_state["business_problem"] = state["business_problem_summarized"]
 
         result = self.generator(gen_state)
-        print(f"Generated {len(result.get('current_features', []))} features")
+        print(f"Total features after generation: {len(result.get('current_features', []))}")
         return result
 
     def _evaluate_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -175,7 +183,18 @@ class FeatureDiscoveryWorkflow:
     
     def _finalize_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Node for finalizing results."""
-        
+
+        print(f"\n{'#'*60}")
+        print(f"# FINALIZATION PHASE")
+        print(f"{'#'*60}")
+        print(f"Total iterations completed: {state['iteration']}")
+        print(f"Final feature count: {len(state['current_features'])}")
+
+        # Calculate final average score
+        if state.get("evaluations"):
+            avg_score = sum(e.overall_score for e in state["evaluations"]) / len(state["evaluations"])
+            print(f"Final average score: {avg_score:.2f}")
+
         # Package final output
         final_output = {
             "features": [f.model_dump() for f in state["current_features"]],
@@ -184,7 +203,7 @@ class FeatureDiscoveryWorkflow:
             "taxonomy_explanation": state.get("taxonomy_explanation", ""),
             "total_iterations": state["iteration"]
         }
-        
+
         return {"final_output": final_output, "converged": True}
     
     def _should_continue(
@@ -229,6 +248,7 @@ class FeatureDiscoveryWorkflow:
             "business_problem_original": None,
             "business_problem_summarized": None,
             "current_features": None,
+            "kept_features": None,
             "rubric": None,
             "evaluations": None,
             "iteration": 0,
@@ -236,6 +256,8 @@ class FeatureDiscoveryWorkflow:
             "converged": False,
             "final_output": None,
             "improvement_recommendations": None,
+            "low_scoring_count": None,
+            "low_scoring_type_counts": None,
             "taxonomy_explanation": ""
         }
         

@@ -253,7 +253,9 @@ Generate {focus_area} features as JSON."""
     def generate(
         self,
         business_problem: str,
-        feedback: str = ""
+        feedback: str = "",
+        num_features: int = None,
+        type_distribution: dict = None
     ) -> GeneratorOutput:
         """
         Generate candidate features for a business problem.
@@ -261,11 +263,14 @@ Generate {focus_area} features as JSON."""
         Args:
             business_problem: Natural language description of the business problem
             feedback: Optional feedback from previous evaluation for refinement
+            num_features: Optional specific number of features to generate (for regeneration)
+            type_distribution: Optional dict of data_type -> count to maintain variety
 
         Returns:
             GeneratorOutput containing features and taxonomy explanation
         """
-        if self.parallel:
+        if self.parallel and num_features is None:
+            # Only use parallel generation for initial full generation
             return self.generate_parallel(business_problem, feedback)
 
         # Add feedback context if provided
@@ -277,6 +282,22 @@ Previous Iteration Feedback:
 
 Please incorporate this feedback to improve the feature list.
 """
+
+        # If specific number requested, add it to the prompt
+        if num_features is not None:
+            if type_distribution:
+                # Build type-specific instructions
+                type_instructions = ", ".join([f"{count} {dtype}" for dtype, count in type_distribution.items()])
+                if self.compact_mode:
+                    num_features_instruction = f"\n\nGenerate exactly {num_features} new features with this type distribution: {type_instructions}. Maintain variety."
+                else:
+                    num_features_instruction = f"\n\nIMPORTANT: Generate exactly {num_features} new diverse features to replace low-scoring ones.\nMaintain data type variety with approximately: {type_instructions}."
+            else:
+                if self.compact_mode:
+                    num_features_instruction = f"\n\nGenerate exactly {num_features} new diverse features."
+                else:
+                    num_features_instruction = f"\n\nIMPORTANT: Generate exactly {num_features} new diverse features to replace low-scoring ones."
+            feedback_text += num_features_instruction
 
         # Create the chain
         chain = self.prompt | self.llm | self.parser
@@ -306,19 +327,50 @@ Please incorporate this feedback to improve the feature list.
             Updated state with generated features
         """
         business_problem = state["business_problem"]
+        iteration = state.get("iteration", 0)
 
         # Get feedback from previous iteration if available
         feedback = ""
-        if state.get("evaluations") and state["iteration"] > 0:
+        if state.get("evaluations") and iteration > 0:
             # Extract improvement recommendations from last evaluation
             if state.get("improvement_recommendations"):
                 feedback = state["improvement_recommendations"]
 
-        # Generate features
-        output = self.generate(business_problem, feedback)
+        # Check if we need to regenerate only a subset of features
+        kept_features = state.get("kept_features", [])
+        low_scoring_count = state.get("low_scoring_count")
+        low_scoring_type_counts = state.get("low_scoring_type_counts")
 
-        # Update state
-        return {
-            "current_features": output.features,
-            "taxonomy_explanation": output.taxonomy_explanation
-        }
+        if kept_features and low_scoring_count and low_scoring_count > 0:
+            # Regeneration mode: only generate replacements for low-scoring features
+            print(f"Regeneration mode: keeping {len(kept_features)} features, generating {low_scoring_count} new ones")
+            if low_scoring_type_counts:
+                print(f"Type distribution to match: {low_scoring_type_counts}")
+
+            # Generate only the needed number of replacement features
+            output = self.generate(
+                business_problem,
+                feedback,
+                num_features=low_scoring_count,
+                type_distribution=low_scoring_type_counts
+            )
+
+            # Combine kept features with new features
+            combined_features = kept_features + output.features
+            print(f"Combined: {len(kept_features)} kept + {len(output.features)} new = {len(combined_features)} total")
+
+            return {
+                "current_features": combined_features,
+                "taxonomy_explanation": output.taxonomy_explanation,
+                "kept_features": None,  # Clear for next iteration
+                "low_scoring_count": None,
+                "low_scoring_type_counts": None
+            }
+        else:
+            # Initial generation: generate full set of features
+            output = self.generate(business_problem, feedback)
+
+            return {
+                "current_features": output.features,
+                "taxonomy_explanation": output.taxonomy_explanation
+            }
