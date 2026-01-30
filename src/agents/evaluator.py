@@ -165,6 +165,57 @@ Score as JSON."""
             ("human", human_message)
         ])
 
+    def _parse_evaluation_result(self, result: dict, features: List[Feature]) -> FeatureEvaluation:
+        """
+        Parse LLM result into FeatureEvaluation with fallbacks for malformed responses.
+
+        Args:
+            result: Raw dict from LLM
+            features: List of features being evaluated (for fallback scores)
+
+        Returns:
+            FeatureEvaluation object
+        """
+        try:
+            return FeatureEvaluation(**result)
+        except Exception as e:
+            # Try to salvage what we can
+            print(f"Warning: Evaluation parsing failed ({e}), attempting recovery...")
+
+            feature_scores = []
+
+            # Try to extract feature_scores
+            raw_scores = result.get("feature_scores", [])
+            for i, score_data in enumerate(raw_scores):
+                try:
+                    if isinstance(score_data, dict):
+                        # Ensure required fields exist
+                        score_data.setdefault("feature_name", features[i].name if i < len(features) else f"feature_{i}")
+                        score_data.setdefault("criterion_scores", {})
+                        score_data.setdefault("overall_score", 5.0)
+                        score_data.setdefault("feedback", "")
+                        feature_scores.append(FeatureScore(**score_data))
+                except Exception:
+                    continue
+
+            # If no scores extracted, create default scores for all features
+            if not feature_scores:
+                feature_scores = [
+                    FeatureScore(
+                        feature_name=f.name,
+                        criterion_scores={},
+                        overall_score=5.0,
+                        feedback="Unable to parse evaluation"
+                    )
+                    for f in features
+                ]
+
+            return FeatureEvaluation(
+                feature_scores=feature_scores,
+                improvement_suggested=result.get("improvement_suggested", False),
+                improvement_recommendations=result.get("improvement_recommendations")
+            )
+
     def create_rubric(self, business_problem: str) -> EvaluationRubric:
         """
         Create an evaluation rubric for the business problem.
@@ -250,7 +301,7 @@ Score as JSON."""
                 "max_iterations": max_iterations
             })
 
-            return FeatureEvaluation(**result)
+            return self._parse_evaluation_result(result, features)
 
     def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """

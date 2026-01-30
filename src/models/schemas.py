@@ -102,6 +102,8 @@ class CompactFeatureEvaluation(BaseModel):
     continue_: bool = Field(alias="continue", description="Whether to continue iterating")
     feedback: Optional[str] = Field(default=None, description="Brief feedback for next iteration")
 
+    model_config = {"populate_by_name": True}
+
 
 class GeneratorOutput(BaseModel):
     """Output from the Feature Generator Agent."""
