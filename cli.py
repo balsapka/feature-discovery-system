@@ -33,15 +33,11 @@ def format_features(features, evaluations):
     for i, feature in enumerate(features, 1):
         eval_data = eval_dict.get(feature['name'], {})
         score = eval_data.get('overall_score', 0)
-        parse_error = eval_data.get('parse_error')
 
         output.append(f"\n{'='*70}")
         output.append(f"Feature #{i}: {feature['name']}")
         output.append(f"{'='*70}")
-        score_str = f"Score: {score:.2f}/10"
-        if parse_error:
-            score_str += f" ⚠️  (parse error: {parse_error})"
-        output.append(score_str)
+        output.append(f"Score: {score:.2f}/10")
         output.append(f"Type: {feature['data_type']}")
         output.append(f"Taxonomy: {feature['taxonomy']}")
         output.append(f"\nDescription:")
@@ -63,11 +59,11 @@ def format_rubric(rubric):
     output.append("="*70)
     output.append(f"\nRationale: {rubric['rationale']}\n")
     output.append("Criteria:")
-    
+
     for criterion in rubric['criteria']:
         output.append(f"\n  • {criterion['name']} (Weight: {criterion['weight']:.2f})")
         output.append(f"    {criterion['description']}")
-    
+
     return "\n".join(output)
 
 
@@ -92,9 +88,6 @@ Examples:
 
   # Increase iterations
   python cli.py --problem "Credit risk scoring" --iterations 5
-
-  # Enable strict mode (fail on parse errors)
-  python cli.py --problem "Credit risk" --strict
 
   # Custom batch size for large feature sets
   python cli.py --problem "Credit risk" --batch-size 15
@@ -150,12 +143,6 @@ Examples:
     )
 
     parser.add_argument(
-        '--strict',
-        action='store_true',
-        help='Enable strict mode - fail on parse errors instead of using fallbacks'
-    )
-
-    parser.add_argument(
         '--output',
         type=str,
         help='Output file path (JSON format)'
@@ -192,11 +179,11 @@ Examples:
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-    
+
     # Print banner
     if not args.no_banner:
         print_banner()
-    
+
     # Get business problem
     if args.problem:
         business_problem = args.problem
@@ -211,11 +198,11 @@ Examples:
             else:
                 break
         business_problem = "\n".join(lines)
-        
+
         if not business_problem.strip():
             print("Error: No business problem provided")
             sys.exit(1)
-    
+
     print(f"\n📋 Business Problem:")
     print(f"   {business_problem.strip()}\n")
 
@@ -225,8 +212,7 @@ Examples:
     print(f"   Model: {args.model or 'default'}")
     print(f"   Max iterations: {args.iterations}")
     print(f"   Score threshold: {args.score_threshold}")
-    print(f"   Batch size: {args.batch_size}")
-    print(f"   Strict mode: {args.strict}\n")
+    print(f"   Batch size: {args.batch_size}\n")
 
     try:
         workflow = FeatureDiscoveryWorkflow(
@@ -235,42 +221,36 @@ Examples:
             max_iterations=args.iterations,
             temperature=args.temperature,
             score_threshold=args.score_threshold,
-            batch_size=args.batch_size,
-            strict_mode=args.strict
+            batch_size=args.batch_size
         )
     except Exception as e:
         print(f"❌ Error initializing workflow: {e}")
         sys.exit(1)
-    
+
     # Run workflow
     print("🚀 Running feature discovery...")
     print("   This may take 1-3 minutes...\n")
-    
+
     try:
         result = workflow.run(business_problem, verbose=args.verbose)
     except Exception as e:
         print(f"❌ Error running workflow: {e}")
         sys.exit(1)
-    
+
     # Display results
     print("\n✅ Feature discovery complete!")
     print(f"   Total iterations: {result['total_iterations']}")
 
-    # Warn about parse errors
-    parse_error_count = result.get('parse_error_count', 0)
-    if parse_error_count > 0:
-        print(f"   ⚠️  Parse errors: {parse_error_count} (some scores may be unreliable)")
-
     print(format_rubric(result['rubric']))
     print(format_features(result['features'], result['evaluations']))
-    
+
     # Save to file if requested
     if args.output:
         output_path = Path(args.output)
         with open(output_path, 'w') as f:
             json.dump(result, f, indent=2)
         print(f"\n💾 Results saved to: {output_path}")
-    
+
     print("\n" + "="*70)
     print("Thank you for using Feature Discovery System!")
     print("="*70)

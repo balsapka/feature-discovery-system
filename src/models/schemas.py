@@ -67,10 +67,6 @@ class FeatureScore(BaseModel):
     )
     overall_score: float = Field(description="Weighted overall score (0-10)", ge=0, le=10)
     feedback: str = Field(description="Qualitative feedback for improvement")
-    parse_error: Optional[str] = Field(
-        default=None,
-        description="If set, indicates this score was derived from fallback due to parse failure"
-    )
 
 
 class CompactFeatureScore(BaseModel):
@@ -84,8 +80,7 @@ class CompactFeatureScore(BaseModel):
             feature_name=self.name,
             criterion_scores={},
             overall_score=self.score,
-            feedback="",
-            parse_error=None
+            feedback=""
         )
 
 

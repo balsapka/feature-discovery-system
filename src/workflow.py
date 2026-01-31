@@ -51,8 +51,7 @@ class FeatureDiscoveryWorkflow:
         compact_mode: bool = False,
         parallel: bool = False,
         score_threshold: float = 7.0,
-        batch_size: int = 10,
-        strict_mode: bool = False
+        batch_size: int = 10
     ):
         """
         Initialize the workflow.
@@ -67,7 +66,6 @@ class FeatureDiscoveryWorkflow:
             parallel: If True, generate features in parallel batches (~2x speedup)
             score_threshold: Minimum average score to stop iterating (default 7.0)
             batch_size: Number of features per evaluation batch (default 10)
-            strict_mode: If True, raise exceptions on parse errors instead of using fallbacks
         """
         load_dotenv()
 
@@ -78,7 +76,6 @@ class FeatureDiscoveryWorkflow:
         self.parallel = parallel
         self.score_threshold = score_threshold
         self.batch_size = batch_size
-        self.strict_mode = strict_mode
 
         # Initialize LLM
         self.llm = self._initialize_llm(llm_provider, model_name, api_key)
@@ -90,8 +87,7 @@ class FeatureDiscoveryWorkflow:
             self.llm,
             compact_mode=compact_mode,
             score_threshold=score_threshold,
-            batch_size=batch_size,
-            strict_mode=strict_mode
+            batch_size=batch_size
         )
 
         # Build the graph
@@ -220,13 +216,10 @@ class FeatureDiscoveryWorkflow:
 
         result = self.evaluator(eval_state)
 
-        # Log evaluation results
-        parse_errors = sum(1 for s in result.get("evaluations", []) if s.parse_error)
         logger.info("Evaluation phase completed", extra={
             "converged": result.get("converged", False),
             "kept_features": len(result.get("kept_features", [])),
-            "low_scoring_count": result.get("low_scoring_count", 0),
-            "parse_errors": parse_errors
+            "low_scoring_count": result.get("low_scoring_count", 0)
         })
 
         return result
@@ -236,18 +229,15 @@ class FeatureDiscoveryWorkflow:
         feature_count = len(state['current_features'])
         iterations = state['iteration']
 
-        # Calculate final average score and parse error count
+        # Calculate final average score
         avg_score = 0.0
-        parse_errors = 0
         if state.get("evaluations"):
             avg_score = sum(e.overall_score for e in state["evaluations"]) / len(state["evaluations"])
-            parse_errors = sum(1 for e in state["evaluations"] if e.parse_error)
 
         logger.info("Finalization phase", extra={
             "total_iterations": iterations,
             "final_feature_count": feature_count,
-            "final_average_score": round(avg_score, 2),
-            "parse_errors": parse_errors
+            "final_average_score": round(avg_score, 2)
         })
 
         print(f"\n{'#'*60}")
@@ -257,8 +247,6 @@ class FeatureDiscoveryWorkflow:
         print(f"Final feature count: {feature_count}")
         if state.get("evaluations"):
             print(f"Final average score: {avg_score:.2f}")
-            if parse_errors > 0:
-                print(f"⚠️  Features with parse errors: {parse_errors} (scores may be unreliable)")
 
         # Package final output
         final_output = {
@@ -266,8 +254,7 @@ class FeatureDiscoveryWorkflow:
             "rubric": state["rubric"].model_dump(),
             "evaluations": [e.model_dump() for e in state["evaluations"]],
             "taxonomy_explanation": state.get("taxonomy_explanation", ""),
-            "total_iterations": iterations,
-            "parse_error_count": parse_errors  # Include for visibility
+            "total_iterations": iterations
         }
 
         return {"final_output": final_output, "converged": True}
@@ -321,7 +308,6 @@ class FeatureDiscoveryWorkflow:
                 - evaluations: Feature scores
                 - taxonomy_explanation: How features are organized
                 - total_iterations: Number of iterations performed
-                - parse_error_count: Number of features with parse errors (for reliability check)
         """
         # Validate input
         if not business_problem or not business_problem.strip():
@@ -332,8 +318,7 @@ class FeatureDiscoveryWorkflow:
             "compact_mode": self.compact_mode,
             "parallel": self.parallel,
             "score_threshold": self.score_threshold,
-            "batch_size": self.batch_size,
-            "strict_mode": self.strict_mode
+            "batch_size": self.batch_size
         })
 
         # Initialize state
@@ -361,22 +346,17 @@ class FeatureDiscoveryWorkflow:
             print(f"Max iterations: {self.max_iterations}")
             print(f"Score threshold: {self.score_threshold}")
             print(f"Batch size: {self.batch_size}")
-            print(f"Strict mode: {self.strict_mode}")
             print(f"Business Problem: {business_problem}\n")
 
         final_state = self.graph.invoke(initial_state)
 
         logger.info("Workflow completed", extra={
             "total_iterations": final_state['iteration'],
-            "final_feature_count": len(final_state.get('current_features', [])),
-            "parse_error_count": final_state["final_output"].get("parse_error_count", 0)
+            "final_feature_count": len(final_state.get('current_features', []))
         })
 
         if verbose:
             print(f"\nWorkflow completed after {final_state['iteration']} iterations")
-            parse_errors = final_state["final_output"].get("parse_error_count", 0)
-            if parse_errors > 0:
-                print(f"⚠️  Warning: {parse_errors} features had parse errors - review evaluations for reliability")
 
         return final_state["final_output"]
     
