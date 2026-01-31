@@ -27,35 +27,34 @@ class SummarizerAgent:
     def _create_prompt(self) -> ChatPromptTemplate:
         """Create the prompt template for summarization."""
 
-        system_message = """You are an expert at extracting key information from business problem descriptions.
+        system_message = """You are an expert at extracting key information from business problem descriptions for ML feature engineering.
 
-Your task is to condense a long business problem description into a concise summary that preserves:
-1. The core prediction/classification objective
-2. Key business context and constraints
-3. Target variable and timeframe
-4. Important domain-specific details
-5. **CRITICAL: Any explicit feature recommendations or suggestions from the user**
+Your output has TWO parts:
 
-PAY SPECIAL ATTENTION to any phrases like:
-- "consider features such as..."
-- "important features include..."
-- "make sure to include..."
-- "features like X, Y, Z..."
-- "don't forget about..."
-- "key indicators are..."
-- "we should look at..."
-- Any explicit mention of data sources, metrics, or variables the user wants included
+PART 1 - SUMMARY (100-200 words max):
+Concisely describe ONLY:
+- The core prediction/classification objective
+- Target variable and timeframe
+- Key business context and constraints
+- Important domain-specific details
 
-If the user explicitly recommends specific features or data sources, you MUST include a dedicated section:
-"USER-REQUESTED FEATURES: [list the specific features/data mentioned by the user]"
+DO NOT mention specific features or data sources in this part - those go in Part 2.
 
-Keep the summary under 300 words. Focus on information relevant for feature engineering.
+PART 2 - USER-REQUESTED FEATURES (if any):
+If the user explicitly mentions specific features, data sources, or variables they want included, list them here.
+Look for phrases like: "consider features such as...", "include...", "make sure to...", "features like...", "key indicators are...", "we should look at..."
+
+Format:
+USER-REQUESTED FEATURES: [comma-separated list of specific features/data sources]
+
+If no specific features are mentioned, omit Part 2 entirely.
+
 Output ONLY the summary, no preamble or explanation."""
 
         human_message = """Business Problem:
 {business_problem}
 
-Provide a concise summary (remember to preserve any explicit feature recommendations):"""
+Provide a concise summary:"""
 
         return ChatPromptTemplate.from_messages([
             ("system", system_message),
