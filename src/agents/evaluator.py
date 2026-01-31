@@ -221,20 +221,22 @@ Evaluate these features and determine if another iteration would help."""
 
     def _create_compact_evaluation_prompt(self) -> ChatPromptTemplate:
         """Create prompt for feature evaluation (compact mode)."""
-        system_message = """Score features 0-10. Output JSON:
+        system_message = """Score ALL features 0-10. You MUST return a score for EVERY feature listed.
+Output JSON:
 {{
-    "scores": [{{"name": "feature_name", "score": 7.5, "feedback": "brief feedback"}}],
+    "scores": [{{"name": "feature_name", "score": 7.5}}],
     "continue": true or false,
     "feedback": "brief feedback if continue=true"
 }}
 
+CRITICAL: Include EVERY feature name exactly as provided. Do not skip any features.
 Set continue=false if scores are good (avg > 7) or max iterations reached."""
 
         human_message = """Problem: {business_problem}
-Features: {features}
+Features to score: {features}
 Iteration: {iteration}/{max_iterations}
 
-Score as JSON."""
+Score ALL features as JSON. Return one score object for each feature name listed above."""
 
         return ChatPromptTemplate.from_messages([
             ("system", system_message),
@@ -377,20 +379,31 @@ Score as JSON."""
             })
             raw_scores = result.get("feature_scores", [])
 
-        # Parse scores, filtering out invalid ones
+        # Build a map of scores by name for reliable matching
+        score_by_name = {}
+        for score_data in raw_scores:
+            if isinstance(score_data, dict):
+                name = score_data.get("name", "")
+                if name:
+                    score_by_name[name] = score_data
+
+        # Parse scores using name-based matching
         valid_scores = []
         skipped = 0
 
-        for i, feature in enumerate(features):
-            if i < len(raw_scores):
-                score = self._try_parse_score(raw_scores[i], feature.name)
+        for feature in features:
+            score_data = score_by_name.get(feature.name)
+            if score_data:
+                score = self._try_parse_score(score_data, feature.name)
                 if score:
                     valid_scores.append(score)
                 else:
                     skipped += 1
+                    logger.debug(f"Could not parse score for '{feature.name}'")
             else:
-                # No score returned for this feature
+                # No score returned for this feature - try fuzzy match
                 skipped += 1
+                logger.warning(f"No score returned for feature '{feature.name}'")
 
         return valid_scores, skipped
 

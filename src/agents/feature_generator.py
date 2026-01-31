@@ -366,7 +366,8 @@ Please incorporate this feedback to improve the feature list.
             return {
                 "current_features": combined_features,
                 "taxonomy_explanation": output.taxonomy_explanation,
-                "kept_features": None,  # Clear for next iteration
+                # Keep kept_features so evaluator can use it for token optimization
+                # (evaluator will rebuild kept_features after re-evaluation)
                 "low_scoring_count": None,
                 "low_scoring_type_counts": None
             }
