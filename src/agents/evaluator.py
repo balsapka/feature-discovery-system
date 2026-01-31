@@ -87,16 +87,12 @@ class EvaluatorAgent:
     Uses an evaluator-optimizer pattern to iteratively improve feature quality.
     """
 
-    MIN_SCORE = 0.0
-    MAX_SCORE = 10.0
-    DEFAULT_BATCH_SIZE = 10
-
     def __init__(
         self,
         llm,
         compact_mode: bool = False,
         score_threshold: float = 7.0,
-        batch_size: int = DEFAULT_BATCH_SIZE
+        batch_size: int = 10
     ):
         """
         Initialize the Evaluator Agent.
@@ -257,8 +253,8 @@ Score as JSON."""
 
                 score_float = float(score_val)
 
-                # Validate range
-                if score_float < self.MIN_SCORE or score_float > self.MAX_SCORE:
+                # Validate range (0-10 as defined in prompts)
+                if score_float < 0 or score_float > 10:
                     logger.debug(f"Score {score_float} out of range for '{feature_name}', skipping")
                     return None
 
@@ -270,7 +266,7 @@ Score as JSON."""
                 )
             elif isinstance(score_data, (int, float)):
                 score_float = float(score_data)
-                if score_float < self.MIN_SCORE or score_float > self.MAX_SCORE:
+                if score_float < 0 or score_float > 10:
                     return None
                 return FeatureScore(
                     feature_name=feature_name,
