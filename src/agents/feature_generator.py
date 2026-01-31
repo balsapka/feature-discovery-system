@@ -363,11 +363,14 @@ Please incorporate this feedback to improve the feature list.
             combined_features = kept_features + output.features
             print(f"Combined: {len(kept_features)} kept + {len(output.features)} new = {len(combined_features)} total")
 
+            # Track kept feature names for the evaluator to use for token optimization
+            kept_feature_names = {f.name for f in kept_features}
+
             return {
                 "current_features": combined_features,
                 "taxonomy_explanation": output.taxonomy_explanation,
-                # Keep kept_features so evaluator can use it for token optimization
-                # (evaluator will rebuild kept_features after re-evaluation)
+                # Pass kept_features AND their names for reliable matching in evaluator
+                "kept_feature_names": kept_feature_names,
                 "low_scoring_count": None,
                 "low_scoring_type_counts": None
             }

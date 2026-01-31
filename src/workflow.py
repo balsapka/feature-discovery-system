@@ -23,6 +23,7 @@ class GraphState(TypedDict):
     business_problem_summarized: Optional[str]
     current_features: Optional[List[Feature]]
     kept_features: Optional[List[Feature]]  # High-scoring features to keep
+    kept_feature_names: Optional[set]  # Names of kept features for reliable matching
     rubric: Optional[EvaluationRubric]
     evaluations: Optional[List[FeatureScore]]
     iteration: int
@@ -331,6 +332,7 @@ class FeatureDiscoveryWorkflow:
             "business_problem_summarized": None,
             "current_features": None,
             "kept_features": None,
+            "kept_feature_names": None,
             "rubric": None,
             "evaluations": None,
             "iteration": 0,

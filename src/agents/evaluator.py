@@ -532,14 +532,21 @@ Score ALL features as JSON. Return one score object for each feature name listed
         rubric = state.get("rubric") or self.create_rubric(business_problem)
 
         # Build previous scores for token optimization
+        # Use kept_feature_names from generator if available (more reliable)
+        # Otherwise fall back to extracting names from kept_features
         previous_scores = None
-        kept_features = state.get("kept_features", [])
-        if kept_features and state.get("evaluations"):
+        kept_feature_names = state.get("kept_feature_names")
+        if kept_feature_names is None:
+            kept_features = state.get("kept_features", [])
+            if kept_features:
+                kept_feature_names = {f.name for f in kept_features}
+
+        if kept_feature_names and state.get("evaluations"):
             previous_scores = {}
-            kept_names = {f.name for f in kept_features}
             for score in state["evaluations"]:
-                if score.feature_name in kept_names:
+                if score.feature_name in kept_feature_names:
                     previous_scores[score.feature_name] = score
+            logger.debug(f"Built previous_scores with {len(previous_scores)} entries from {len(kept_feature_names)} kept names")
 
         # Evaluate
         evaluation = self.evaluate_features(
