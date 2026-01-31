@@ -65,14 +65,18 @@ class FeatureScore(BaseModel):
     criterion_scores: Dict[str, float] = Field(
         description="Scores for each rubric criterion (0-10)"
     )
-    overall_score: float = Field(description="Weighted overall score")
+    overall_score: float = Field(description="Weighted overall score (0-10)", ge=0, le=10)
     feedback: str = Field(description="Qualitative feedback for improvement")
+    parse_error: Optional[str] = Field(
+        default=None,
+        description="If set, indicates this score was derived from fallback due to parse failure"
+    )
 
 
 class CompactFeatureScore(BaseModel):
     """Score for a single feature (compact mode)."""
     name: str
-    score: float = Field(description="Overall score 0-10")
+    score: float = Field(description="Overall score 0-10", ge=0, le=10)
 
     def to_feature_score(self) -> "FeatureScore":
         """Convert to full FeatureScore."""
@@ -80,7 +84,8 @@ class CompactFeatureScore(BaseModel):
             feature_name=self.name,
             criterion_scores={},
             overall_score=self.score,
-            feedback=""
+            feedback="",
+            parse_error=None
         )
 
 

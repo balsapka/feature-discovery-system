@@ -4,6 +4,7 @@ Command-line interface for the Feature Discovery System.
 """
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -28,26 +29,30 @@ def format_features(features, evaluations):
     """Format features for terminal output."""
     output = []
     eval_dict = {e['feature_name']: e for e in evaluations}
-    
+
     for i, feature in enumerate(features, 1):
         eval_data = eval_dict.get(feature['name'], {})
         score = eval_data.get('overall_score', 0)
-        
+        parse_error = eval_data.get('parse_error')
+
         output.append(f"\n{'='*70}")
         output.append(f"Feature #{i}: {feature['name']}")
         output.append(f"{'='*70}")
-        output.append(f"Score: {score:.2f}/10")
+        score_str = f"Score: {score:.2f}/10"
+        if parse_error:
+            score_str += f" ⚠️  (parse error: {parse_error})"
+        output.append(score_str)
         output.append(f"Type: {feature['data_type']}")
         output.append(f"Taxonomy: {feature['taxonomy']}")
         output.append(f"\nDescription:")
         output.append(f"  {feature['description']}")
         output.append(f"\nRationale:")
         output.append(f"  {feature['rationale']}")
-        
+
         if eval_data:
             output.append(f"\nEvaluation Feedback:")
             output.append(f"  {eval_data.get('feedback', 'N/A')}")
-    
+
     return "\n".join(output)
 
 
@@ -75,27 +80,33 @@ def main():
 Examples:
   # Interactive mode
   python cli.py
-  
+
   # With business problem
   python cli.py --problem "Predict customer churn in retail banking"
-  
+
   # Save output to file
   python cli.py --problem "Detect fraud" --output results.json
-  
+
   # Use OpenAI instead of Anthropic
   python cli.py --provider openai --model gpt-4
-  
+
   # Increase iterations
   python cli.py --problem "Credit risk scoring" --iterations 5
+
+  # Enable strict mode (fail on parse errors)
+  python cli.py --problem "Credit risk" --strict
+
+  # Custom batch size for large feature sets
+  python cli.py --problem "Credit risk" --batch-size 15
         """
     )
-    
+
     parser.add_argument(
         '--problem',
         type=str,
         help='Business problem description (if not provided, will prompt interactively)'
     )
-    
+
     parser.add_argument(
         '--provider',
         type=str,
@@ -103,46 +114,84 @@ Examples:
         default='anthropic',
         help='LLM provider (default: anthropic)'
     )
-    
+
     parser.add_argument(
         '--model',
         type=str,
         help='Model name (default: claude-sonnet-4-5-20250929 or gpt-4)'
     )
-    
+
     parser.add_argument(
         '--iterations',
         type=int,
         default=3,
         help='Maximum iterations (default: 3)'
     )
-    
+
     parser.add_argument(
         '--temperature',
         type=float,
         default=0.7,
         help='LLM temperature (default: 0.7)'
     )
-    
+
+    parser.add_argument(
+        '--score-threshold',
+        type=float,
+        default=7.0,
+        help='Minimum score to keep features (default: 7.0)'
+    )
+
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=10,
+        help='Features per evaluation batch (default: 10)'
+    )
+
+    parser.add_argument(
+        '--strict',
+        action='store_true',
+        help='Enable strict mode - fail on parse errors instead of using fallbacks'
+    )
+
     parser.add_argument(
         '--output',
         type=str,
         help='Output file path (JSON format)'
     )
-    
+
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Enable verbose output'
     )
-    
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
+
     parser.add_argument(
         '--no-banner',
         action='store_true',
         help='Suppress banner'
     )
-    
+
     args = parser.parse_args()
+
+    # Configure logging
+    if args.debug:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+    elif args.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
     
     # Print banner
     if not args.no_banner:
@@ -169,19 +218,25 @@ Examples:
     
     print(f"\n📋 Business Problem:")
     print(f"   {business_problem.strip()}\n")
-    
+
     # Initialize workflow
     print(f"🔧 Initializing workflow...")
     print(f"   Provider: {args.provider}")
     print(f"   Model: {args.model or 'default'}")
-    print(f"   Max iterations: {args.iterations}\n")
-    
+    print(f"   Max iterations: {args.iterations}")
+    print(f"   Score threshold: {args.score_threshold}")
+    print(f"   Batch size: {args.batch_size}")
+    print(f"   Strict mode: {args.strict}\n")
+
     try:
         workflow = FeatureDiscoveryWorkflow(
             llm_provider=args.provider,
             model_name=args.model,
             max_iterations=args.iterations,
-            temperature=args.temperature
+            temperature=args.temperature,
+            score_threshold=args.score_threshold,
+            batch_size=args.batch_size,
+            strict_mode=args.strict
         )
     except Exception as e:
         print(f"❌ Error initializing workflow: {e}")
@@ -200,7 +255,12 @@ Examples:
     # Display results
     print("\n✅ Feature discovery complete!")
     print(f"   Total iterations: {result['total_iterations']}")
-    
+
+    # Warn about parse errors
+    parse_error_count = result.get('parse_error_count', 0)
+    if parse_error_count > 0:
+        print(f"   ⚠️  Parse errors: {parse_error_count} (some scores may be unreliable)")
+
     print(format_rubric(result['rubric']))
     print(format_features(result['features'], result['evaluations']))
     
