@@ -4,6 +4,7 @@ Evaluator Agent - Creates rubrics and evaluates generated features.
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Tuple
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, BaseOutputParser
@@ -91,6 +92,7 @@ class EvaluatorAgent:
         self,
         llm,
         compact_mode: bool = False,
+        parallel: bool = False,
         score_threshold: float = 7.0,
         batch_size: int = 10
     ):
@@ -100,11 +102,13 @@ class EvaluatorAgent:
         Args:
             llm: Language model instance (OpenAI or Anthropic)
             compact_mode: If True, use minimal schema for faster evaluation
+            parallel: If True, evaluate batches in parallel for faster execution
             score_threshold: Minimum average score to stop iterating (default 7.0)
             batch_size: Number of features per evaluation batch (default 10)
         """
         self.llm = llm
         self.compact_mode = compact_mode
+        self.parallel = parallel
         self.score_threshold = score_threshold
         self.batch_size = batch_size
 
@@ -429,14 +433,54 @@ Score as JSON."""
         if features_to_evaluate:
             # Batch if needed
             if len(features_to_evaluate) > self.batch_size:
-                logger.info(f"Evaluating {len(features_to_evaluate)} features in batches of {self.batch_size}")
-                for batch_start in range(0, len(features_to_evaluate), self.batch_size):
-                    batch = features_to_evaluate[batch_start:batch_start + self.batch_size]
-                    batch_scores, skipped = self._evaluate_batch(
-                        business_problem, batch, rubric, iteration, max_iterations
-                    )
-                    all_scores.extend(batch_scores)
-                    total_skipped += skipped
+                batches = [
+                    features_to_evaluate[i:i + self.batch_size]
+                    for i in range(0, len(features_to_evaluate), self.batch_size)
+                ]
+                logger.info(f"Evaluating {len(features_to_evaluate)} features in {len(batches)} batches of up to {self.batch_size}")
+
+                if self.parallel and len(batches) > 1:
+                    # Parallel evaluation
+                    logger.info(f"Using parallel evaluation with {len(batches)} workers")
+                    failed_batches = []
+                    with ThreadPoolExecutor(max_workers=len(batches)) as executor:
+                        futures = {
+                            executor.submit(
+                                self._evaluate_batch,
+                                business_problem, batch, rubric, iteration, max_iterations
+                            ): (i, batch) for i, batch in enumerate(batches)
+                        }
+                        for future in as_completed(futures):
+                            batch_idx, batch = futures[future]
+                            try:
+                                batch_scores, skipped = future.result()
+                                all_scores.extend(batch_scores)
+                                total_skipped += skipped
+                            except Exception as e:
+                                logger.warning(f"Batch {batch_idx} failed in parallel mode: {e}, will retry sequentially")
+                                failed_batches.append(batch)
+
+                    # Retry failed batches sequentially to ensure all features get evaluated
+                    if failed_batches:
+                        logger.info(f"Retrying {len(failed_batches)} failed batches sequentially")
+                        for batch in failed_batches:
+                            try:
+                                batch_scores, skipped = self._evaluate_batch(
+                                    business_problem, batch, rubric, iteration, max_iterations
+                                )
+                                all_scores.extend(batch_scores)
+                                total_skipped += skipped
+                            except Exception as e:
+                                logger.error(f"Batch retry also failed: {e}")
+                                total_skipped += len(batch)
+                else:
+                    # Sequential evaluation
+                    for batch in batches:
+                        batch_scores, skipped = self._evaluate_batch(
+                            business_problem, batch, rubric, iteration, max_iterations
+                        )
+                        all_scores.extend(batch_scores)
+                        total_skipped += skipped
             else:
                 batch_scores, total_skipped = self._evaluate_batch(
                     business_problem, features_to_evaluate, rubric, iteration, max_iterations

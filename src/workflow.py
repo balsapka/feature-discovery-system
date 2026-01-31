@@ -86,6 +86,7 @@ class FeatureDiscoveryWorkflow:
         self.evaluator = EvaluatorAgent(
             self.llm,
             compact_mode=compact_mode,
+            parallel=parallel,
             score_threshold=score_threshold,
             batch_size=batch_size
         )
@@ -318,7 +319,9 @@ class FeatureDiscoveryWorkflow:
             "compact_mode": self.compact_mode,
             "parallel": self.parallel,
             "score_threshold": self.score_threshold,
-            "batch_size": self.batch_size
+            "batch_size": self.batch_size,
+            "generator_parallel": self.parallel,
+            "evaluator_parallel": self.parallel
         })
 
         # Initialize state

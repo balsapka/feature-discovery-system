@@ -91,6 +91,9 @@ Examples:
 
   # Custom batch size for large feature sets
   python cli.py --problem "Credit risk" --batch-size 15
+
+  # Enable parallel generation and evaluation (~2x speedup)
+  python cli.py --problem "Credit risk" --parallel
         """
     )
 
@@ -140,6 +143,12 @@ Examples:
         type=int,
         default=10,
         help='Features per evaluation batch (default: 10)'
+    )
+
+    parser.add_argument(
+        '--parallel',
+        action='store_true',
+        help='Enable parallel generation and evaluation (~2x speedup)'
     )
 
     parser.add_argument(
@@ -212,7 +221,8 @@ Examples:
     print(f"   Model: {args.model or 'default'}")
     print(f"   Max iterations: {args.iterations}")
     print(f"   Score threshold: {args.score_threshold}")
-    print(f"   Batch size: {args.batch_size}\n")
+    print(f"   Batch size: {args.batch_size}")
+    print(f"   Parallel: {args.parallel}\n")
 
     try:
         workflow = FeatureDiscoveryWorkflow(
@@ -221,7 +231,8 @@ Examples:
             max_iterations=args.iterations,
             temperature=args.temperature,
             score_threshold=args.score_threshold,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            parallel=args.parallel
         )
     except Exception as e:
         print(f"❌ Error initializing workflow: {e}")
