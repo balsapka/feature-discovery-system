@@ -72,7 +72,7 @@ IMPORTANT: Your response must be valid JSON matching this exact schema:
     "taxonomy_explanation": "explanation of how features are organized"
 }}
 
-Generate 8-15 diverse, high-quality feature concepts."""
+{num_features_instruction}"""
 
         human_message = """Business Problem:
 {business_problem}
@@ -139,7 +139,7 @@ Output JSON with this EXACT format:
 
 Types: structured (demographic, account), time_series (historical), unstructured (text), external (market data)
 
-Generate 15-20 diverse features. Keep descriptions SHORT."""
+{num_features_instruction}"""
 
         human_message = """Problem: {business_problem}
 
@@ -289,21 +289,18 @@ Previous Iteration Feedback:
 Please incorporate this feedback to improve the feature list.
 """
 
-        # If specific number requested, add it to the prompt
+        # Build the num_features instruction for the system prompt
         if num_features is not None:
             if type_distribution:
-                # Build type-specific instructions
                 type_instructions = ", ".join([f"{count} {dtype}" for dtype, count in type_distribution.items()])
-                if self.compact_mode:
-                    num_features_instruction = f"\n\nGenerate exactly {num_features} new features with this type distribution: {type_instructions}. Maintain variety."
-                else:
-                    num_features_instruction = f"\n\nIMPORTANT: Generate exactly {num_features} new diverse features to replace low-scoring ones.\nMaintain data type variety with approximately: {type_instructions}."
+                num_features_instruction = f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less). Maintain data type variety: {type_instructions}."
             else:
-                if self.compact_mode:
-                    num_features_instruction = f"\n\nGenerate exactly {num_features} new diverse features."
-                else:
-                    num_features_instruction = f"\n\nIMPORTANT: Generate exactly {num_features} new diverse features to replace low-scoring ones."
-            feedback_text += num_features_instruction
+                num_features_instruction = f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less)."
+        else:
+            if self.compact_mode:
+                num_features_instruction = "Generate 15-20 diverse features. Keep descriptions SHORT."
+            else:
+                num_features_instruction = "Generate 8-15 diverse, high-quality feature concepts."
 
         # Create the chain
         chain = self.prompt | self.llm | self.parser
@@ -311,7 +308,8 @@ Please incorporate this feedback to improve the feature list.
         # Generate features
         result = chain.invoke({
             "business_problem": business_problem,
-            "feedback": feedback_text
+            "feedback": feedback_text,
+            "num_features_instruction": num_features_instruction
         })
 
         if self.compact_mode:
