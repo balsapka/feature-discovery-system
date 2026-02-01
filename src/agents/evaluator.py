@@ -436,9 +436,6 @@ class BaseEvaluator(ABC):
         max_iterations: int
     ) -> Dict[str, Any]:
         """Build the output state dictionary."""
-        # Build a map of feature name -> score for matching
-        score_map = {s.feature_name: s for s in evaluation.feature_scores}
-
         # Build a map of feature name -> feature for lookup
         feature_map = {f.name: f for f in features}
 

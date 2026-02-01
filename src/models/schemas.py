@@ -110,11 +110,6 @@ class EvaluationTracker(BaseModel):
         """Total features with valid scores (carried + newly scored)."""
         return len(self.carried_features) + len(self.newly_scored)
 
-    @property
-    def total_dropped(self) -> int:
-        """Total features dropped due to LLM issues."""
-        return len(self.dropped_no_score)
-
     def log_summary(self, iteration: int, max_iterations: int, avg_score: float, threshold: float) -> None:
         """Print a comprehensive evaluation summary."""
         print(f"\n{'='*70}")
@@ -151,21 +146,6 @@ class EvaluationTracker(BaseModel):
         print(f"{'='*70}\n")
 
 
-class CompactFeatureScore(BaseModel):
-    """Score for a single feature (compact mode)."""
-    name: str
-    score: float = Field(description="Overall score 0-10", ge=0, le=10)
-
-    def to_feature_score(self) -> "FeatureScore":
-        """Convert to full FeatureScore."""
-        return FeatureScore(
-            feature_name=self.name,
-            criterion_scores={},
-            overall_score=self.score,
-            feedback=""
-        )
-
-
 class FeatureEvaluation(BaseModel):
     """Complete evaluation of all features."""
     feature_scores: List[FeatureScore]
@@ -176,15 +156,6 @@ class FeatureEvaluation(BaseModel):
         default=None,
         description="Specific recommendations for the next iteration"
     )
-
-
-class CompactFeatureEvaluation(BaseModel):
-    """Complete evaluation of all features (compact mode)."""
-    scores: List[CompactFeatureScore]
-    continue_: bool = Field(alias="continue", description="Whether to continue iterating")
-    feedback: Optional[str] = Field(default=None, description="Brief feedback for next iteration")
-
-    model_config = {"populate_by_name": True}
 
 
 class GeneratorOutput(BaseModel):

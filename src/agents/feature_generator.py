@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from ..models.schemas import GeneratorOutput, CompactGeneratorOutput, Feature, CompactFeature
+from ..models.schemas import GeneratorOutput, CompactGeneratorOutput, Feature
 
 
 class FeatureGeneratorAgent:
