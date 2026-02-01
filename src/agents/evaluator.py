@@ -407,7 +407,13 @@ class BaseEvaluator(ABC):
             previous_scores=previous_scores
         )
 
-        return self._build_output_state(features, evaluation, tracker, rubric, iteration, max_iterations)
+        # Get previously rejected names to accumulate across iterations
+        previous_rejected_names = state.get("rejected_feature_names", set())
+
+        return self._build_output_state(
+            features, evaluation, tracker, rubric, iteration, max_iterations,
+            previous_rejected_names=previous_rejected_names
+        )
 
     def _build_previous_scores(self, state: Dict[str, Any]) -> Optional[Dict[str, FeatureScore]]:
         """Build previous scores map from state."""
@@ -433,7 +439,8 @@ class BaseEvaluator(ABC):
         tracker: EvaluationTracker,
         rubric: EvaluationRubric,
         iteration: int,
-        max_iterations: int
+        max_iterations: int,
+        previous_rejected_names: set = None
     ) -> Dict[str, Any]:
         """Build the output state dictionary."""
         # Build a map of feature name -> feature for lookup
@@ -483,6 +490,11 @@ class BaseEvaluator(ABC):
         else:
             recommendations = evaluation.improvement_recommendations
 
+        # Track rejected feature names to prevent regenerating them
+        rejected_names = {f.name for f in low_scoring_features}
+        # Also include any previously rejected names
+        all_rejected_names = rejected_names | (previous_rejected_names or set())
+
         return {
             "rubric": rubric,
             "evaluations": evaluation.feature_scores,
@@ -490,6 +502,7 @@ class BaseEvaluator(ABC):
             "kept_features": kept_features,
             "low_scoring_count": low_scoring_count,
             "low_scoring_type_counts": low_scoring_type_counts or None,
+            "rejected_feature_names": all_rejected_names,
             "converged": not should_continue,
             "iteration": iteration + 1
         }

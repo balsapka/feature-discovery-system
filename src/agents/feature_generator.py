@@ -277,7 +277,8 @@ Generate {focus_area} features as JSON."""
         business_problem: str,
         feedback: str = "",
         num_features: int = None,
-        type_distribution: dict = None
+        type_distribution: dict = None,
+        excluded_names: set = None
     ) -> GeneratorOutput:
         """
         Generate candidate features for a business problem.
@@ -287,6 +288,7 @@ Generate {focus_area} features as JSON."""
             feedback: Optional feedback from previous evaluation for refinement
             num_features: Optional specific number of features to generate (for regeneration)
             type_distribution: Optional dict of data_type -> count to maintain variety
+            excluded_names: Optional set of feature names to avoid (already tried or kept)
 
         Returns:
             GeneratorOutput containing features and taxonomy explanation
@@ -304,6 +306,12 @@ Previous Iteration Feedback:
 
 Please incorporate this feedback to improve the feature list.
 """
+
+        # Add exclusion list to prevent regenerating same features
+        if excluded_names:
+            excluded_list = ", ".join(sorted(excluded_names))
+            exclusion_msg = f"\n\nDO NOT generate any of these features (already exist or were rejected): {excluded_list}"
+            feedback_text += exclusion_msg
 
         # Build the num_features instruction for the system prompt
         if num_features is not None:
@@ -368,7 +376,16 @@ Please incorporate this feedback to improve the feature list.
 
         if kept_features and low_scoring_count and low_scoring_count > 0:
             # Regeneration mode: only generate replacements for low-scoring features
+            kept_feature_names = {f.name for f in kept_features}
+
+            # Get rejected feature names to prevent regenerating them
+            rejected_names = state.get("rejected_feature_names", set())
+
+            # Combine kept + rejected as exclusion list
+            excluded_names = kept_feature_names | rejected_names
+
             print(f"Regeneration mode: keeping {len(kept_features)} features, generating {low_scoring_count} new ones")
+            print(f"Excluding {len(excluded_names)} names (kept + previously rejected)")
             if low_scoring_type_counts:
                 print(f"Type distribution to match: {low_scoring_type_counts}")
 
@@ -377,15 +394,18 @@ Please incorporate this feedback to improve the feature list.
                 business_problem,
                 feedback,
                 num_features=low_scoring_count,
-                type_distribution=low_scoring_type_counts
+                type_distribution=low_scoring_type_counts,
+                excluded_names=excluded_names
             )
 
-            # Combine kept features with new features
-            combined_features = kept_features + output.features
-            print(f"Combined: {len(kept_features)} kept + {len(output.features)} new = {len(combined_features)} total")
+            # Filter out any duplicates that slipped through (LLM might ignore instructions)
+            new_features = [f for f in output.features if f.name not in excluded_names]
+            if len(new_features) < len(output.features):
+                print(f"Filtered {len(output.features) - len(new_features)} duplicate features")
 
-            # Track kept feature names for the evaluator to use for token optimization
-            kept_feature_names = {f.name for f in kept_features}
+            # Combine kept features with new features
+            combined_features = kept_features + new_features
+            print(f"Combined: {len(kept_features)} kept + {len(new_features)} new = {len(combined_features)} total")
 
             return {
                 "current_features": combined_features,
