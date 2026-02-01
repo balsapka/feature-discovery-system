@@ -83,6 +83,72 @@ class RawScoreData(BaseModel):
     feedback: Optional[str] = Field(default=None, description="Feedback text")
 
 
+class EvaluationTracker(BaseModel):
+    """
+    Tracks all feature categories during evaluation for consistent logging.
+
+    This provides a single source of truth for feature counts across
+    the evaluation pipeline, ensuring logging consistency.
+    """
+    # Input tracking
+    total_input_features: int = Field(description="Total features received for evaluation")
+    carried_features: List[str] = Field(default_factory=list, description="Feature names carried from previous iteration")
+    features_to_evaluate: List[str] = Field(default_factory=list, description="Feature names sent to LLM for evaluation")
+
+    # Output tracking
+    newly_scored: List[str] = Field(default_factory=list, description="Feature names successfully scored by LLM")
+    dropped_no_score: List[str] = Field(default_factory=list, description="Feature names dropped due to missing/invalid LLM score")
+
+    # Final categorization
+    kept_above_threshold: List[str] = Field(default_factory=list, description="Feature names above score threshold")
+    below_threshold: List[str] = Field(default_factory=list, description="Feature names below score threshold")
+
+    @property
+    def total_with_valid_scores(self) -> int:
+        """Total features with valid scores (carried + newly scored)."""
+        return len(self.carried_features) + len(self.newly_scored)
+
+    @property
+    def total_dropped(self) -> int:
+        """Total features dropped due to LLM issues."""
+        return len(self.dropped_no_score)
+
+    def log_summary(self, iteration: int, max_iterations: int, avg_score: float, threshold: float) -> None:
+        """Print a comprehensive evaluation summary."""
+        print(f"\n{'='*70}")
+        print(f"EVALUATION TRACKING - Iteration {iteration}/{max_iterations}")
+        print(f"{'='*70}")
+
+        print(f"\n[INPUT]")
+        print(f"  Total features received:     {self.total_input_features}")
+        print(f"  Carried from previous iter:  {len(self.carried_features)}")
+        print(f"  Sent to LLM for evaluation:  {len(self.features_to_evaluate)}")
+
+        print(f"\n[LLM EVALUATION]")
+        print(f"  Successfully scored:         {len(self.newly_scored)}")
+        if self.dropped_no_score:
+            print(f"  DROPPED (no/invalid score):  {len(self.dropped_no_score)}")
+            print(f"    Names: {self.dropped_no_score}")
+
+        print(f"\n[FINAL SCORES]")
+        print(f"  Total with valid scores:     {self.total_with_valid_scores}")
+        print(f"  Average score:               {avg_score:.2f}")
+        print(f"  Above threshold ({threshold}):      {len(self.kept_above_threshold)}")
+        print(f"  Below threshold:             {len(self.below_threshold)}")
+
+        if self.kept_above_threshold:
+            print(f"\n[KEPT FEATURES]")
+            for name in self.kept_above_threshold:
+                print(f"    + {name}")
+
+        if self.below_threshold:
+            print(f"\n[TO REGENERATE]")
+            for name in self.below_threshold:
+                print(f"    - {name}")
+
+        print(f"{'='*70}\n")
+
+
 class CompactFeatureScore(BaseModel):
     """Score for a single feature (compact mode)."""
     name: str
