@@ -24,6 +24,7 @@ class GraphState(TypedDict):
     current_features: Optional[List[Feature]]
     kept_features: Optional[List[Feature]]  # High-scoring features to keep
     kept_feature_names: Optional[set]  # Names of kept features for reliable matching
+    rejected_feature_names: Optional[set]  # Names of rejected features to avoid regenerating
     rubric: Optional[EvaluationRubric]
     evaluations: Optional[List[FeatureScore]]
     iteration: int
@@ -52,7 +53,9 @@ class FeatureDiscoveryWorkflow:
         compact_mode: bool = False,
         parallel: bool = False,
         score_threshold: float = 7.0,
-        batch_size: int = 10
+        target_feature_count: int = 20,
+        num_batches: int = 2,
+        eval_batch_size: int = 10
     ):
         """
         Initialize the workflow.
@@ -64,9 +67,11 @@ class FeatureDiscoveryWorkflow:
             temperature: LLM temperature for generation
             api_key: Optional API key (otherwise loads from .env)
             compact_mode: If True, use minimal prompts/schemas for faster execution
-            parallel: If True, generate features in parallel batches (~2x speedup)
+            parallel: If True, generate/evaluate in parallel batches (~2x speedup)
             score_threshold: Minimum average score to stop iterating (default 7.0)
-            batch_size: Number of features per evaluation batch (default 10)
+            target_feature_count: Target number of features to generate (default 20)
+            num_batches: Number of parallel batches for generation (default 2)
+            eval_batch_size: Number of features per evaluation batch (default 10)
         """
         load_dotenv()
 
@@ -76,20 +81,28 @@ class FeatureDiscoveryWorkflow:
         self.compact_mode = compact_mode
         self.parallel = parallel
         self.score_threshold = score_threshold
-        self.batch_size = batch_size
+        self.target_feature_count = target_feature_count
+        self.num_batches = num_batches
+        self.eval_batch_size = eval_batch_size
 
         # Initialize LLM
         self.llm = self._initialize_llm(llm_provider, model_name, api_key)
 
         # Initialize agents
         self.summarizer = SummarizerAgent(self.llm)
-        self.generator = FeatureGeneratorAgent(self.llm, compact_mode=compact_mode, parallel=parallel)
+        self.generator = FeatureGeneratorAgent(
+            self.llm,
+            compact_mode=compact_mode,
+            parallel=parallel,
+            num_batches=num_batches,
+            target_feature_count=target_feature_count
+        )
         self.evaluator = EvaluatorAgent(
             self.llm,
             compact_mode=compact_mode,
             parallel=parallel,
             score_threshold=score_threshold,
-            batch_size=batch_size
+            batch_size=eval_batch_size
         )
 
         # Build the graph
@@ -320,9 +333,9 @@ class FeatureDiscoveryWorkflow:
             "compact_mode": self.compact_mode,
             "parallel": self.parallel,
             "score_threshold": self.score_threshold,
-            "batch_size": self.batch_size,
-            "generator_parallel": self.parallel,
-            "evaluator_parallel": self.parallel
+            "target_feature_count": self.target_feature_count,
+            "num_batches": self.num_batches,
+            "eval_batch_size": self.eval_batch_size
         })
 
         # Initialize state
@@ -333,6 +346,7 @@ class FeatureDiscoveryWorkflow:
             "current_features": None,
             "kept_features": None,
             "kept_feature_names": None,
+            "rejected_feature_names": None,
             "rubric": None,
             "evaluations": None,
             "iteration": 0,
@@ -349,8 +363,9 @@ class FeatureDiscoveryWorkflow:
         if verbose:
             print(f"Starting Feature Discovery Workflow")
             print(f"Max iterations: {self.max_iterations}")
+            print(f"Target features: {self.target_feature_count}")
             print(f"Score threshold: {self.score_threshold}")
-            print(f"Batch size: {self.batch_size}")
+            print(f"Parallel: {self.parallel} (gen batches: {self.num_batches}, eval batch size: {self.eval_batch_size})")
             print(f"Business Problem: {business_problem}\n")
 
         final_state = self.graph.invoke(initial_state)
