@@ -14,7 +14,14 @@ class FeatureGeneratorAgent:
     Supports parallel generation for faster execution.
     """
 
-    def __init__(self, llm, compact_mode: bool = False, parallel: bool = False, num_batches: int = 2):
+    def __init__(
+        self,
+        llm,
+        compact_mode: bool = False,
+        parallel: bool = False,
+        num_batches: int = 2,
+        target_feature_count: int = 20
+    ):
         """
         Initialize the Feature Generator Agent.
 
@@ -23,11 +30,13 @@ class FeatureGeneratorAgent:
             compact_mode: If True, use minimal schema for faster generation
             parallel: If True, generate features in parallel batches
             num_batches: Number of parallel batches (default 2)
+            target_feature_count: Target number of features to generate (default 20)
         """
         self.llm = llm
         self.compact_mode = compact_mode
         self.parallel = parallel
         self.num_batches = num_batches
+        self.target_feature_count = target_feature_count
 
         if compact_mode:
             self.parser = JsonOutputParser(pydantic_object=CompactGeneratorOutput)
@@ -90,29 +99,30 @@ Generate candidate features as a JSON object following the specified schema."""
 
     def _create_parallel_prompt(self) -> ChatPromptTemplate:
         """Create the prompt for parallel batch generation (full mode)."""
+        features_per_batch = (self.target_feature_count + self.num_batches - 1) // self.num_batches
 
-        system_message = """You are an expert data scientist working in a banking institution.
+        system_message = f"""You are an expert data scientist working in a banking institution.
 Your role is to generate relevant candidate features for predictive modeling.
 
-Focus on {focus_area} features. Generate ONLY features in this category.
+Focus on {{focus_area}} features. Generate ONLY features in this category.
 
 IMPORTANT: Feature names MUST be lowercase with underscores (snake_case), e.g., "monthly_income", "avg_transaction_amount".
 
 IMPORTANT: Your response must be valid JSON matching this exact schema:
-{{
+{{{{
     "features": [
-        {{
+        {{{{
             "name": "feature_name_in_lowercase",
             "description": "detailed description",
             "data_type": "structured|unstructured|time_series|external",
             "taxonomy": "category/subcategory",
             "rationale": "why this feature is relevant"
-        }}
+        }}}}
     ],
     "taxonomy_explanation": "explanation of how features are organized"
-}}
+}}}}
 
-Generate 8-10 diverse, high-quality features in your assigned category."""
+CRITICAL: Generate EXACTLY {features_per_batch} diverse, high-quality features in your assigned category."""
 
         human_message = """Business Problem:
 {business_problem}
@@ -160,17 +170,18 @@ Generate features as JSON."""
 
     def _create_compact_parallel_prompt(self) -> ChatPromptTemplate:
         """Create the prompt for parallel batch generation (compact mode)."""
+        features_per_batch = (self.target_feature_count + self.num_batches - 1) // self.num_batches
 
-        system_message = """Generate {focus_area} features ONLY. Feature names MUST be lowercase with underscores (snake_case).
+        system_message = f"""Generate {{focus_area}} features ONLY. Feature names MUST be lowercase with underscores (snake_case).
 
 Output JSON:
-{{
+{{{{
     "features": [
-        {{"name": "feature_name_lowercase", "desc": "brief (max 15 words)", "type": "structured|time_series|unstructured|external"}}
+        {{{{"name": "feature_name_lowercase", "desc": "brief (max 15 words)", "type": "structured|time_series|unstructured|external"}}}}
     ]
-}}
+}}}}
 
-Generate 10 features in your category. Keep descriptions SHORT."""
+CRITICAL: Generate EXACTLY {features_per_batch} features in your category. Keep descriptions SHORT."""
 
         human_message = """Problem: {business_problem}
 {feedback}
@@ -321,10 +332,9 @@ Please incorporate this feedback to improve the feature list.
             else:
                 num_features_instruction = f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less)."
         else:
+            num_features_instruction = f"CRITICAL: Generate EXACTLY {self.target_feature_count} diverse, high-quality features (no more, no less)."
             if self.compact_mode:
-                num_features_instruction = "Generate 15-20 diverse features. Keep descriptions SHORT."
-            else:
-                num_features_instruction = "Generate 8-15 diverse, high-quality feature concepts."
+                num_features_instruction += " Keep descriptions SHORT."
 
         # Create the chain
         chain = self.prompt | self.llm | self.parser
