@@ -5,6 +5,7 @@ from .schemas import (
     RubricCriterion,
     EvaluationRubric,
     FeatureScore,
+    RawScoreData,
     FeatureEvaluation,
     GeneratorOutput,
     WorkflowState
@@ -16,6 +17,7 @@ __all__ = [
     'RubricCriterion',
     'EvaluationRubric',
     'FeatureScore',
+    'RawScoreData',
     'FeatureEvaluation',
     'GeneratorOutput',
     'WorkflowState'

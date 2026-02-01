@@ -69,6 +69,20 @@ class FeatureScore(BaseModel):
     feedback: str = Field(description="Qualitative feedback for improvement")
 
 
+class RawScoreData(BaseModel):
+    """
+    Normalized intermediate representation of score data from LLM responses.
+
+    This provides a deterministic type for score parsing, handling the various
+    formats that different evaluator modes might return.
+    """
+    name: str = Field(description="Feature name")
+    score: Optional[float] = Field(default=None, description="Score value (compact mode)")
+    overall_score: Optional[float] = Field(default=None, description="Overall score (standard mode)")
+    criterion_scores: Optional[Dict[str, float]] = Field(default=None, description="Per-criterion scores")
+    feedback: Optional[str] = Field(default=None, description="Feedback text")
+
+
 class CompactFeatureScore(BaseModel):
     """Score for a single feature (compact mode)."""
     name: str
