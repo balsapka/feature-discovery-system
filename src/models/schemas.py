@@ -37,8 +37,10 @@ class CompactFeature(BaseModel):
             "unstructured": DataType.UNSTRUCTURED,
             "external": DataType.EXTERNAL,
         }
+        # Normalize name to lowercase with underscores
+        normalized_name = self.name.lower().replace(" ", "_").replace("-", "_")
         return Feature(
-            name=self.name,
+            name=normalized_name,
             description=self.desc,
             data_type=type_map.get(self.type, DataType.STRUCTURED),
             taxonomy="",

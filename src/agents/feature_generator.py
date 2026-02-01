@@ -46,7 +46,7 @@ Your role is to generate relevant candidate features for predictive modeling bas
 
 Given a business problem, you should:
 1. Identify key data sources and feature categories
-2. Generate raw feature concepts (not aggregated/transformed features yet)
+2. Generate feature concepts (both raw attributes and aggregated/derived features as appropriate)
 3. Consider different data types: structured (transactional, demographic), unstructured (documents, text),
    time-series (historical patterns), and external (macroeconomic, market data)
 4. Create a clear taxonomy to organize the features
@@ -58,11 +58,13 @@ These are non-negotiable requirements from the user.**
 
 Focus on feature concepts that would be found in a banking Feature Store.
 
+IMPORTANT: Feature names MUST be lowercase with underscores (snake_case), e.g., "monthly_income", "avg_transaction_amount".
+
 IMPORTANT: Your response must be valid JSON matching this exact schema:
 {{
     "features": [
         {{
-            "name": "feature_name",
+            "name": "feature_name_in_lowercase",
             "description": "detailed description",
             "data_type": "structured|unstructured|time_series|external",
             "taxonomy": "category/subcategory",
@@ -94,11 +96,13 @@ Your role is to generate relevant candidate features for predictive modeling.
 
 Focus on {focus_area} features. Generate ONLY features in this category.
 
+IMPORTANT: Feature names MUST be lowercase with underscores (snake_case), e.g., "monthly_income", "avg_transaction_amount".
+
 IMPORTANT: Your response must be valid JSON matching this exact schema:
 {{
     "features": [
         {{
-            "name": "feature_name",
+            "name": "feature_name_in_lowercase",
             "description": "detailed description",
             "data_type": "structured|unstructured|time_series|external",
             "taxonomy": "category/subcategory",
@@ -108,7 +112,7 @@ IMPORTANT: Your response must be valid JSON matching this exact schema:
     "taxonomy_explanation": "explanation of how features are organized"
 }}
 
-Generate 8-10 diverse, high-quality feature concepts in your assigned category."""
+Generate 8-10 diverse, high-quality features in your assigned category."""
 
         human_message = """Business Problem:
 {business_problem}
@@ -130,10 +134,12 @@ Generate {focus_area} features as JSON."""
 **CRITICAL: If the problem mentions "USER-REQUESTED FEATURES" or specific features the user wants,
 include those FIRST. These are mandatory requirements.**
 
+Feature names MUST be lowercase with underscores (snake_case), e.g., "monthly_income", "avg_transaction_amount".
+
 Output JSON with this EXACT format:
 {{
     "features": [
-        {{"name": "feature_name", "desc": "brief description (max 15 words)", "type": "structured|time_series|unstructured|external"}}
+        {{"name": "feature_name_lowercase", "desc": "brief description (max 15 words)", "type": "structured|time_series|unstructured|external"}}
     ]
 }}
 
@@ -155,10 +161,12 @@ Generate features as JSON."""
     def _create_compact_parallel_prompt(self) -> ChatPromptTemplate:
         """Create the prompt for parallel batch generation (compact mode)."""
 
-        system_message = """Generate {focus_area} features ONLY. Output JSON:
+        system_message = """Generate {focus_area} features ONLY. Feature names MUST be lowercase with underscores (snake_case).
+
+Output JSON:
 {{
     "features": [
-        {{"name": "feature_name", "desc": "brief (max 15 words)", "type": "structured|time_series|unstructured|external"}}
+        {{"name": "feature_name_lowercase", "desc": "brief (max 15 words)", "type": "structured|time_series|unstructured|external"}}
     ]
 }}
 
@@ -180,6 +188,10 @@ Generate {focus_area} features as JSON."""
             "demographic and external"
         ]
 
+    def _normalize_feature_name(self, name: str) -> str:
+        """Normalize feature name to lowercase snake_case."""
+        return name.lower().replace(" ", "_").replace("-", "_")
+
     def _generate_batch(
         self,
         business_problem: str,
@@ -197,9 +209,13 @@ Generate {focus_area} features as JSON."""
 
         if self.compact_mode:
             compact_output = CompactGeneratorOutput(**result)
+            # Normalization happens in CompactFeature.to_feature()
             return [f.to_feature() for f in compact_output.features]
         else:
             output = GeneratorOutput(**result)
+            # Normalize feature names in full mode
+            for feature in output.features:
+                feature.name = self._normalize_feature_name(feature.name)
             return output.features
 
     def generate_parallel(
@@ -314,11 +330,16 @@ Please incorporate this feedback to improve the feature list.
 
         if self.compact_mode:
             # Convert compact output to full output
+            # Normalization happens in CompactFeature.to_feature()
             compact_output = CompactGeneratorOutput(**result)
             features = [f.to_feature() for f in compact_output.features]
             return GeneratorOutput(features=features, taxonomy_explanation="")
         else:
-            return GeneratorOutput(**result)
+            output = GeneratorOutput(**result)
+            # Normalize feature names in full mode
+            for feature in output.features:
+                feature.name = self._normalize_feature_name(feature.name)
+            return output
 
     def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
