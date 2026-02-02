@@ -11,11 +11,25 @@ from .models import (
     GeneratorOutput,
     WorkflowState
 )
+from .feature_matcher import (
+    create_matcher,
+    BaseFeatureMatcher,
+    InMemoryVectorMatcher,
+    FuzzyMatcher,
+    TFIDFMatcher,
+    HybridMatcher,
+    QdrantMatcher,
+    FeatureMatch,
+    FeatureMatchResult,
+)
 
 __all__ = [
+    # Workflow
     'FeatureDiscoveryWorkflow',
+    # Agents
     'FeatureGeneratorAgent',
     'EvaluatorAgent',
+    # Models
     'DataType',
     'Feature',
     'RubricCriterion',
@@ -23,7 +37,17 @@ __all__ = [
     'FeatureScore',
     'FeatureEvaluation',
     'GeneratorOutput',
-    'WorkflowState'
+    'WorkflowState',
+    # Feature Matching
+    'create_matcher',
+    'BaseFeatureMatcher',
+    'InMemoryVectorMatcher',
+    'FuzzyMatcher',
+    'TFIDFMatcher',
+    'HybridMatcher',
+    'QdrantMatcher',
+    'FeatureMatch',
+    'FeatureMatchResult',
 ]
 
 __version__ = '0.1.0'
