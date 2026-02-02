@@ -4,4 +4,9 @@ langchain-openai>=0.0.5
 langchain-anthropic>=0.1.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
-qdrant-client>=1.7.0
+
+# Feature Matching backends (install as needed)
+qdrant-client>=1.7.0          # For QdrantMatcher (production-scale)
+sentence-transformers>=2.2.0   # For InMemoryVectorMatcher and HybridMatcher
+scikit-learn>=1.3.0            # For TFIDFMatcher
+rapidfuzz>=3.0.0               # For FuzzyMatcher and HybridMatcher
