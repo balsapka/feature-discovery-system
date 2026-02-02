@@ -403,6 +403,161 @@ class HybridMatcher(BaseFeatureMatcher):
         return sorted_matches[:self.top_k]
 
 
+class LangChainEmbeddingMatcher(BaseFeatureMatcher):
+    """
+    In-memory vector search using any LangChain-compatible embeddings.
+
+    Works with any embeddings that implement the LangChain Embeddings interface,
+    including LEAPAI Qwen3, BGE-Large, Bedrock, OpenAI, etc.
+
+    Good for feature banks up to ~100K features.
+    No sentence-transformers dependency required.
+    """
+
+    def __init__(
+        self,
+        embeddings,  # LangChain Embeddings object
+        top_k: int = 5
+    ):
+        """
+        Initialize the LangChain embedding matcher.
+
+        Args:
+            embeddings: Any LangChain-compatible Embeddings object
+                       (e.g., LEAPAI Qwen3, BGE-Large, BedrockEmbeddings, etc.)
+            top_k: Number of top matches to return
+        """
+        super().__init__(top_k)
+        self.embeddings = embeddings
+        self.vectors = None
+        self.features = []
+
+    def index(self, features: List[Dict[str, Any]]) -> None:
+        """Index the internal feature bank."""
+        import numpy as np
+
+        self.features = features
+        texts = [
+            f"{f.get('name', '')}: {f.get('description', '')}"
+            for f in features
+        ]
+
+        logger.info("Indexing %d features with LangChain embeddings...", len(features))
+        # LangChain embeddings return List[List[float]]
+        embeddings_list = self.embeddings.embed_documents(texts)
+        self.vectors = np.array(embeddings_list)
+
+        # Normalize for cosine similarity
+        norms = np.linalg.norm(self.vectors, axis=1, keepdims=True)
+        self.vectors = self.vectors / np.maximum(norms, 1e-10)
+
+        logger.info("Indexing complete. Vector shape: %s", self.vectors.shape)
+
+    def search(self, query: str) -> List[FeatureMatch]:
+        """Search for similar features using cosine similarity."""
+        if self.vectors is None:
+            raise RuntimeError("Index not built. Call index() first.")
+
+        import numpy as np
+
+        # LangChain embed_query returns List[float]
+        query_vec = np.array(self.embeddings.embed_query(query))
+        # Normalize query vector
+        query_vec = query_vec / np.maximum(np.linalg.norm(query_vec), 1e-10)
+
+        scores = self.vectors @ query_vec  # Cosine similarity
+
+        top_indices = np.argsort(scores)[-self.top_k:][::-1]
+
+        return [
+            FeatureMatch(
+                internal_name=self.features[i].get('name', ''),
+                similarity_score=float(scores[i]),
+                metadata=self.features[i]
+            )
+            for i in top_indices
+            if scores[i] > 0  # Filter out zero/negative scores
+        ]
+
+
+class LangChainHybridMatcher(BaseFeatureMatcher):
+    """
+    Hybrid matcher combining fuzzy string matching with LangChain embeddings.
+
+    Best accuracy: catches both naming variations and semantic equivalents.
+    Uses any LangChain-compatible embeddings (LEAPAI, Bedrock, etc.)
+    """
+
+    def __init__(
+        self,
+        embeddings,  # LangChain Embeddings object
+        top_k: int = 5,
+        fuzzy_boost: float = 1.2,
+        fuzzy_threshold: int = 50
+    ):
+        """
+        Initialize the hybrid matcher.
+
+        Args:
+            embeddings: Any LangChain-compatible Embeddings object
+            top_k: Number of top matches to return
+            fuzzy_boost: Multiplier for scores that also match fuzzy
+            fuzzy_threshold: Minimum fuzzy score to count as a fuzzy match
+        """
+        super().__init__(top_k)
+        self.fuzzy_boost = fuzzy_boost
+        self.vector_matcher = LangChainEmbeddingMatcher(
+            embeddings=embeddings,
+            top_k=top_k * 2  # Get more candidates for reranking
+        )
+        self.fuzzy_matcher = FuzzyMatcher(
+            top_k=top_k * 2,
+            threshold=fuzzy_threshold
+        )
+        self.features = []
+
+    def index(self, features: List[Dict[str, Any]]) -> None:
+        """Index the internal feature bank in both matchers."""
+        self.features = features
+        self.vector_matcher.index(features)
+        self.fuzzy_matcher.index(features)
+        logger.info("Indexed %d features in LangChain hybrid matcher", len(features))
+
+    def search(self, query: str) -> List[FeatureMatch]:
+        """Search using both fuzzy and semantic, then combine results."""
+        # Get fuzzy matches (for boosting)
+        fuzzy_results = self.fuzzy_matcher.search(query)
+        fuzzy_names = {m.internal_name for m in fuzzy_results}
+
+        # Get semantic matches
+        semantic_results = self.vector_matcher.search(query)
+
+        # Combine scores, boosting fuzzy matches
+        combined = {}
+        for match in semantic_results:
+            score = match.similarity_score
+            if match.internal_name in fuzzy_names:
+                score *= self.fuzzy_boost
+            combined[match.internal_name] = FeatureMatch(
+                internal_name=match.internal_name,
+                similarity_score=min(score, 1.0),  # Cap at 1.0
+                metadata=match.metadata
+            )
+
+        # Add fuzzy-only matches that weren't in semantic results
+        for match in fuzzy_results:
+            if match.internal_name not in combined:
+                combined[match.internal_name] = match
+
+        # Sort by score and return top_k
+        sorted_matches = sorted(
+            combined.values(),
+            key=lambda m: m.similarity_score,
+            reverse=True
+        )
+        return sorted_matches[:self.top_k]
+
+
 class QdrantMatcher(BaseFeatureMatcher):  # pylint: disable=too-many-instance-attributes
     """
     Qdrant-based matcher for large-scale production use.
