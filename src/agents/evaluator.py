@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 class EvaluationError(Exception):
     """Raised when evaluation fails in a way that cannot be recovered."""
-    pass
 
 
 @dataclass
@@ -62,7 +61,9 @@ class RobustJsonOutputParser(BaseOutputParser[dict]):
         try:
             return json.loads(fixed_text)
         except json.JSONDecodeError as e:
-            raise OutputParserException(f"Failed to parse JSON: {e}\nText: {text[:500]}")
+            raise OutputParserException(
+                f"Failed to parse JSON: {e}\nText: {text[:500]}"
+            ) from e
 
     def _fix_json(self, text: str) -> str:
         """Attempt to fix common JSON formatting issues."""
@@ -122,45 +123,55 @@ class BaseEvaluator(ABC):
         self.parallel = parallel
         self.score_threshold = score_threshold
         self.batch_size = batch_size
+        # These will be set by _setup_prompts_and_parsers in subclasses
+        self.evaluation_prompt = None
+        self.evaluation_parser = None
         self._setup_prompts_and_parsers()
 
     @abstractmethod
     def _setup_prompts_and_parsers(self) -> None:
         """Set up evaluation prompts and output parsers."""
-        pass
 
     @abstractmethod
     def create_rubric(self, business_problem: str) -> EvaluationRubric:
         """Create an evaluation rubric for the business problem."""
-        pass
 
     @abstractmethod
-    def _format_features_for_prompt(self, features: List[Feature], rubric: Optional[EvaluationRubric]) -> Dict[str, str]:
+    def _format_features_for_prompt(
+        self, features: List[Feature], rubric: Optional[EvaluationRubric]
+    ) -> Dict[str, str]:
         """Format features and rubric for the evaluation prompt."""
-        pass
 
     @abstractmethod
     def _extract_raw_scores(self, result: Dict[str, Any]) -> List[RawScoreData]:
         """Extract raw score data from LLM response."""
-        pass
 
-    def _parse_score(self, score_data: RawScoreData, feature_name: str) -> Optional[FeatureScore]:
+    def _parse_score(
+        self, score_data: RawScoreData, feature_name: str
+    ) -> Optional[FeatureScore]:
         """
         Parse a RawScoreData into a FeatureScore.
 
         Returns None if the score cannot be validated.
         """
         try:
-            score_val = score_data.score if score_data.score is not None else score_data.overall_score
+            score_val = (
+                score_data.score
+                if score_data.score is not None
+                else score_data.overall_score
+            )
             if score_val is None:
-                logger.debug(f"No score field for '{feature_name}', skipping")
+                logger.debug("No score field for '%s', skipping", feature_name)
                 return None
 
             score_float = float(score_val)
 
             # Validate range (0-10 as defined in prompts)
             if score_float < 0 or score_float > 10:
-                logger.debug(f"Score {score_float} out of range for '{feature_name}', skipping")
+                logger.debug(
+                    "Score %s out of range for '%s', skipping",
+                    score_float, feature_name
+                )
                 return None
 
             return FeatureScore(
@@ -169,11 +180,11 @@ class BaseEvaluator(ABC):
                 overall_score=score_float,
                 feedback=score_data.feedback or ""
             )
-        except (ValueError, TypeError) as e:
-            logger.debug(f"Failed to parse score for '{feature_name}': {e}")
+        except (ValueError, TypeError) as exc:
+            logger.debug("Failed to parse score for '%s': %s", feature_name, exc)
             return None
 
-    def _evaluate_batch(
+    def _evaluate_batch(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         business_problem: str,
         features: List[Feature],
@@ -191,6 +202,7 @@ class BaseEvaluator(ABC):
 
         prompt_data = self._format_features_for_prompt(features, rubric)
 
+        # pylint: disable=unsupported-binary-operation
         chain = self.evaluation_prompt | self.llm | self.evaluation_parser
         llm_result = chain.invoke({
             "business_problem": business_problem,
@@ -214,14 +226,14 @@ class BaseEvaluator(ABC):
                     result.scored_names.append(feature.name)
                 else:
                     result.dropped_names.append(feature.name)
-                    logger.debug(f"Could not parse score for '{feature.name}'")
+                    logger.debug("Could not parse score for '%s'", feature.name)
             else:
                 result.dropped_names.append(feature.name)
-                logger.warning(f"No score returned for feature '{feature.name}'")
+                logger.warning("No score returned for feature '%s'", feature.name)
 
         return result
 
-    def evaluate_features(
+    def evaluate_features(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         business_problem: str,
         features: List[Feature],
@@ -252,6 +264,7 @@ class BaseEvaluator(ABC):
             for feature in features:
                 if feature.name in previous_scores:
                     carried_scores.append(previous_scores[feature.name])
+                    # pylint: disable=no-member
                     tracker.carried_features.append(feature.name)
                 else:
                     features_to_evaluate.append(feature)
@@ -280,13 +293,16 @@ class BaseEvaluator(ABC):
         avg_score = sum(fs.overall_score for fs in combined_scores) / len(combined_scores)
         should_continue = avg_score < self.score_threshold and iteration < max_iterations - 1
 
+        recommendations = (
+            "Continue improving low-scoring features" if should_continue else None
+        )
         return FeatureEvaluation(
             feature_scores=combined_scores,
             improvement_suggested=should_continue,
-            improvement_recommendations="Continue improving low-scoring features" if should_continue else None
+            improvement_recommendations=recommendations
         ), tracker
 
-    def _evaluate_with_batching(
+    def _evaluate_with_batching(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         business_problem: str,
         features: List[Feature],
@@ -300,22 +316,24 @@ class BaseEvaluator(ABC):
                 features[i:i + self.batch_size]
                 for i in range(0, len(features), self.batch_size)
             ]
-            logger.info(f"Evaluating {len(features)} features in {len(batches)} batches of up to {self.batch_size}")
+            logger.info(
+                "Evaluating %d features in %d batches of up to %d",
+                len(features), len(batches), self.batch_size
+            )
 
             if self.parallel and len(batches) > 1:
                 return self._evaluate_batches_parallel(
                     business_problem, batches, rubric, iteration, max_iterations
                 )
-            else:
-                return self._evaluate_batches_sequential(
-                    business_problem, batches, rubric, iteration, max_iterations
-                )
-        else:
-            return self._evaluate_batch(
-                business_problem, features, rubric, iteration, max_iterations
+            return self._evaluate_batches_sequential(
+                business_problem, batches, rubric, iteration, max_iterations
             )
 
-    def _evaluate_batches_parallel(
+        return self._evaluate_batch(
+            business_problem, features, rubric, iteration, max_iterations
+        )
+
+    def _evaluate_batches_parallel(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         business_problem: str,
         batches: List[List[Feature]],
@@ -324,7 +342,7 @@ class BaseEvaluator(ABC):
         max_iterations: int
     ) -> BatchResult:
         """Evaluate batches in parallel."""
-        logger.info(f"Using parallel evaluation with {len(batches)} workers")
+        logger.info("Using parallel evaluation with %d workers", len(batches))
         combined = BatchResult()
         failed_batches = []
 
@@ -342,13 +360,16 @@ class BaseEvaluator(ABC):
                     combined.scores.extend(result.scores)
                     combined.scored_names.extend(result.scored_names)
                     combined.dropped_names.extend(result.dropped_names)
-                except Exception as e:
-                    logger.warning(f"Batch {batch_idx} failed in parallel mode: {e}, will retry sequentially")
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    logger.warning(
+                        "Batch %d failed in parallel mode: %s, will retry sequentially",
+                        batch_idx, exc
+                    )
                     failed_batches.append(batch)
 
         # Retry failed batches sequentially
         if failed_batches:
-            logger.info(f"Retrying {len(failed_batches)} failed batches sequentially")
+            logger.info("Retrying %d failed batches sequentially", len(failed_batches))
             for batch in failed_batches:
                 try:
                     result = self._evaluate_batch(
@@ -357,14 +378,14 @@ class BaseEvaluator(ABC):
                     combined.scores.extend(result.scores)
                     combined.scored_names.extend(result.scored_names)
                     combined.dropped_names.extend(result.dropped_names)
-                except Exception as e:
-                    logger.error(f"Batch retry also failed: {e}")
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    logger.error("Batch retry also failed: %s", exc)
                     # All features in this batch are dropped
                     combined.dropped_names.extend([f.name for f in batch])
 
         return combined
 
-    def _evaluate_batches_sequential(
+    def _evaluate_batches_sequential(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         business_problem: str,
         batches: List[List[Feature]],
@@ -428,11 +449,14 @@ class BaseEvaluator(ABC):
             for score in state["evaluations"]:
                 if score.feature_name in kept_feature_names:
                     previous_scores[score.feature_name] = score
-            logger.debug(f"Built previous_scores with {len(previous_scores)} entries from {len(kept_feature_names)} kept names")
+            logger.debug(
+                "Built previous_scores with %d entries from %d kept names",
+                len(previous_scores), len(kept_feature_names)
+            )
             return previous_scores
         return None
 
-    def _build_output_state(
+    def _build_output_state(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         features: List[Feature],
         evaluation: FeatureEvaluation,
@@ -454,7 +478,7 @@ class BaseEvaluator(ABC):
             feature = feature_map.get(score.feature_name)
             if not feature:
                 # This shouldn't happen, but handle gracefully
-                logger.warning(f"Score for unknown feature: {score.feature_name}")
+                logger.warning("Score for unknown feature: %s", score.feature_name)
                 continue
 
             if score.overall_score >= self.score_threshold:
@@ -467,7 +491,8 @@ class BaseEvaluator(ABC):
         low_scoring_count = len(low_scoring_features)
 
         # Calculate average score for logging
-        avg_score = sum(s.overall_score for s in evaluation.feature_scores) / len(evaluation.feature_scores)
+        total_score = sum(s.overall_score for s in evaluation.feature_scores)
+        avg_score = total_score / len(evaluation.feature_scores)
 
         # Log comprehensive summary
         tracker.log_summary(iteration + 1, max_iterations, avg_score, self.score_threshold)
@@ -478,13 +503,20 @@ class BaseEvaluator(ABC):
         # Build recommendations
         low_scoring_type_counts = {}
         if should_continue and low_scoring_features:
-            for f in low_scoring_features:
-                dtype = str(f.data_type.value) if hasattr(f.data_type, 'value') else str(f.data_type)
+            for feat in low_scoring_features:
+                if hasattr(feat.data_type, 'value'):
+                    dtype = str(feat.data_type.value)
+                else:
+                    dtype = str(feat.data_type)
                 low_scoring_type_counts[dtype] = low_scoring_type_counts.get(dtype, 0) + 1
 
-            type_info = ", ".join([f"{count} {dtype}" for dtype, count in low_scoring_type_counts.items()])
-            recommendations = f"Replace {low_scoring_count} low-scoring features ({type_info}). "
-            recommendations += "Maintain data type variety. "
+            type_info = ", ".join(
+                [f"{count} {dtype}" for dtype, count in low_scoring_type_counts.items()]
+            )
+            recommendations = (
+                f"Replace {low_scoring_count} low-scoring features ({type_info}). "
+                "Maintain data type variety. "
+            )
             if evaluation.improvement_recommendations:
                 recommendations += evaluation.improvement_recommendations
         else:
@@ -614,11 +646,14 @@ Evaluate these features and determine if another iteration would help."""
 
     def create_rubric(self, business_problem: str) -> EvaluationRubric:
         """Create an evaluation rubric for the business problem."""
+        # pylint: disable=unsupported-binary-operation
         chain = self.rubric_prompt | self.llm | self.rubric_parser
         result = chain.invoke({"business_problem": business_problem})
         return EvaluationRubric(**result)
 
-    def _format_features_for_prompt(self, features: List[Feature], rubric: Optional[EvaluationRubric]) -> Dict[str, str]:
+    def _format_features_for_prompt(
+        self, features: List[Feature], rubric: Optional[EvaluationRubric]
+    ) -> Dict[str, str]:
         """Format features and rubric for the evaluation prompt."""
         features_text = "\n\n".join([
             f"Feature: {f.name}\n"
@@ -629,7 +664,7 @@ Evaluate these features and determine if another iteration would help."""
             for f in features
         ])
 
-        rubric_text = f"Criteria:\n" + "\n".join([
+        rubric_text = "Criteria:\n" + "\n".join([
             f"- {c.name} (weight: {c.weight}): {c.description}"
             for c in rubric.criteria
         ])
@@ -665,16 +700,28 @@ class CompactEvaluator(BaseEvaluator):
         self.evaluation_prompt = self._create_evaluation_prompt()
         self.default_rubric = EvaluationRubric(
             criteria=[
-                RubricCriterion(name="Relevance", description="Feature relevance to problem", weight=0.4),
-                RubricCriterion(name="Feasibility", description="Data availability and compute cost", weight=0.3),
-                RubricCriterion(name="Predictive", description="Expected predictive power", weight=0.3),
+                RubricCriterion(
+                    name="Relevance",
+                    description="Feature relevance to problem",
+                    weight=0.4
+                ),
+                RubricCriterion(
+                    name="Feasibility",
+                    description="Data availability and compute cost",
+                    weight=0.3
+                ),
+                RubricCriterion(
+                    name="Predictive",
+                    description="Expected predictive power",
+                    weight=0.3
+                ),
             ],
             rationale="Default compact rubric"
         )
 
     def _create_evaluation_prompt(self) -> ChatPromptTemplate:
         """Create prompt for feature evaluation (compact mode)."""
-        system_message = """Score ALL features 0-10. You MUST return a score for EVERY feature listed.
+        system_message = """Score ALL features 0-10. You MUST return a score for EVERY feature.
 Output JSON:
 {{
     "scores": [{{"name": "feature_name", "score": 7.5}}],
@@ -698,10 +745,16 @@ Score ALL features as JSON. Return one score object for each feature name listed
 
     def create_rubric(self, business_problem: str) -> EvaluationRubric:
         """Return the default compact rubric."""
+        # business_problem not used in compact mode - uses fixed rubric
+        del business_problem  # unused
         return self.default_rubric
 
-    def _format_features_for_prompt(self, features: List[Feature], rubric: Optional[EvaluationRubric]) -> Dict[str, str]:
+    def _format_features_for_prompt(
+        self, features: List[Feature], rubric: Optional[EvaluationRubric]
+    ) -> Dict[str, str]:
         """Format features for the compact evaluation prompt."""
+        # rubric not used in compact mode - only feature names needed
+        del rubric  # unused
         features_text = ", ".join([f.name for f in features])
         return {"features": features_text}
 
@@ -722,7 +775,7 @@ Score ALL features as JSON. Return one score object for each feature name listed
 
 
 # Factory function for backwards compatibility
-def EvaluatorAgent(
+def EvaluatorAgent(  # pylint: disable=invalid-name
     llm,
     compact_mode: bool = False,
     parallel: bool = False,

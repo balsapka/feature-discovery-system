@@ -27,7 +27,8 @@ class SummarizerAgent:
     def _create_prompt(self) -> ChatPromptTemplate:
         """Create the prompt template for summarization."""
 
-        system_message = """You are an expert at extracting key information from business problem descriptions for ML feature engineering.
+        system_message = """You are an expert at extracting key information from business \
+problem descriptions for ML feature engineering.
 
 Your output has TWO parts:
 
@@ -71,7 +72,7 @@ Provide a concise summary:"""
         Returns:
             Condensed summary of the business problem
         """
-        chain = self.prompt | self.llm
+        chain = self.prompt | self.llm  # pylint: disable=unsupported-binary-operation
         result = chain.invoke({"business_problem": business_problem})
 
         # Extract content from AIMessage if needed
@@ -104,9 +105,10 @@ Provide a concise summary:"""
         business_problem = state["business_problem"]
 
         print(f"\n{'#'*60}")
-        print(f"# SUMMARIZATION PHASE")
-        print(f"{'#'*60}")
-        print(f"Original problem length: {len(business_problem)} chars (threshold: {self.CHAR_THRESHOLD})")
+        print("# SUMMARIZATION PHASE")
+        print('#'*60)
+        print(f"Original problem length: {len(business_problem)} chars "
+              f"(threshold: {self.CHAR_THRESHOLD})")
 
         if self.should_summarize(business_problem):
             print("Summarizing business problem...")
@@ -117,10 +119,10 @@ Provide a concise summary:"""
                 "business_problem_original": business_problem,
                 "business_problem_summarized": summarized,
             }
-        else:
-            # No summarization needed, use original
-            print("No summarization needed, using original")
-            return {
-                "business_problem_original": business_problem,
-                "business_problem_summarized": business_problem,
-            }
+
+        # No summarization needed, use original
+        print("No summarization needed, using original")
+        return {
+            "business_problem_original": business_problem,
+            "business_problem_summarized": business_problem,
+        }

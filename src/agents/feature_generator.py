@@ -8,13 +8,13 @@ from langchain_core.output_parsers import JsonOutputParser
 from ..models.schemas import GeneratorOutput, CompactGeneratorOutput, Feature
 
 
-class FeatureGeneratorAgent:
+class FeatureGeneratorAgent:  # pylint: disable=too-many-instance-attributes
     """
     Agent responsible for generating candidate features based on a business problem.
     Supports parallel generation for faster execution.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         llm,
         compact_mode: bool = False,
@@ -122,7 +122,8 @@ IMPORTANT: Your response must be valid JSON matching this exact schema:
     "taxonomy_explanation": "explanation of how features are organized"
 }}}}
 
-CRITICAL: Generate EXACTLY {features_per_batch} diverse, high-quality features in your assigned category."""
+CRITICAL: Generate EXACTLY {features_per_batch} diverse, high-quality features \
+in your assigned category."""
 
         human_message = """Business Problem:
 {business_problem}
@@ -139,7 +140,8 @@ Generate {focus_area} features as JSON."""
     def _create_compact_prompt(self) -> ChatPromptTemplate:
         """Create the prompt template for feature generation (compact mode)."""
 
-        system_message = """You are a data scientist. Generate feature names for predictive modeling.
+        system_message = """You are a data scientist. Generate feature names for predictive \
+modeling.
 
 **CRITICAL: If the problem mentions "USER-REQUESTED FEATURES" or specific features the user wants,
 include those FIRST. These are mandatory requirements.**
@@ -172,7 +174,8 @@ Generate features as JSON."""
         """Create the prompt for parallel batch generation (compact mode)."""
         features_per_batch = (self.target_feature_count + self.num_batches - 1) // self.num_batches
 
-        system_message = f"""Generate {{focus_area}} features ONLY. Feature names MUST be lowercase with underscores (snake_case).
+        system_message = f"""Generate {{focus_area}} features ONLY. Feature names MUST be \
+lowercase with underscores (snake_case).
 
 Output JSON:
 {{{{
@@ -181,7 +184,8 @@ Output JSON:
     ]
 }}}}
 
-CRITICAL: Generate EXACTLY {features_per_batch} features in your category. Keep descriptions SHORT."""
+CRITICAL: Generate EXACTLY {features_per_batch} features in your category. \
+Keep descriptions SHORT."""
 
         human_message = """Problem: {business_problem}
 {feedback}
@@ -210,6 +214,7 @@ Generate {focus_area} features as JSON."""
         focus_area: str
     ) -> List[Feature]:
         """Generate a single batch of features for a focus area."""
+        # pylint: disable=unsupported-binary-operation
         chain = self.parallel_prompt | self.llm | self.parser
 
         result = chain.invoke({
@@ -222,12 +227,12 @@ Generate {focus_area} features as JSON."""
             compact_output = CompactGeneratorOutput(**result)
             # Normalization happens in CompactFeature.to_feature()
             return [f.to_feature() for f in compact_output.features]
-        else:
-            output = GeneratorOutput(**result)
-            # Normalize feature names in full mode
-            for feature in output.features:
-                feature.name = self._normalize_feature_name(feature.name)
-            return output.features
+
+        output = GeneratorOutput(**result)
+        # Normalize feature names in full mode
+        for feature in output.features:
+            feature.name = self._normalize_feature_name(feature.name)
+        return output.features
 
     def generate_parallel(
         self,
@@ -246,7 +251,10 @@ Generate {focus_area} features as JSON."""
         """
         feedback_text = ""
         if feedback:
-            feedback_text = f"Feedback: {feedback}" if self.compact_mode else f"Previous feedback: {feedback}"
+            if self.compact_mode:
+                feedback_text = f"Feedback: {feedback}"
+            else:
+                feedback_text = f"Previous feedback: {feedback}"
 
         focus_areas = self._get_focus_areas()
 
@@ -267,8 +275,8 @@ Generate {focus_area} features as JSON."""
                 try:
                     batch_features = future.result()
                     all_features.extend(batch_features)
-                except Exception as e:
-                    print(f"Batch generation failed: {e}")
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    print(f"Batch generation failed: {exc}")
 
         # Deduplicate by feature name
         seen_names = set()
@@ -280,10 +288,13 @@ Generate {focus_area} features as JSON."""
 
         return GeneratorOutput(
             features=unique_features,
-            taxonomy_explanation="Features organized by behavioral/transactional and demographic/external categories"
+            taxonomy_explanation=(
+                "Features organized by behavioral/transactional and "
+                "demographic/external categories"
+            )
         )
 
-    def generate(
+    def generate(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         business_problem: str,
         feedback: str = "",
@@ -321,23 +332,36 @@ Please incorporate this feedback to improve the feature list.
         # Add exclusion list to prevent regenerating same features
         if excluded_names:
             excluded_list = ", ".join(sorted(excluded_names))
-            exclusion_msg = f"\n\nDO NOT generate any of these features (already exist or were rejected): {excluded_list}"
+            exclusion_msg = (
+                f"\n\nDO NOT generate any of these features "
+                f"(already exist or were rejected): {excluded_list}"
+            )
             feedback_text += exclusion_msg
 
         # Build the num_features instruction for the system prompt
         if num_features is not None:
             if type_distribution:
-                type_instructions = ", ".join([f"{count} {dtype}" for dtype, count in type_distribution.items()])
-                num_features_instruction = f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less). Maintain data type variety: {type_instructions}."
+                type_instructions = ", ".join(
+                    [f"{count} {dtype}" for dtype, count in type_distribution.items()]
+                )
+                num_features_instruction = (
+                    f"CRITICAL: Generate EXACTLY {num_features} features "
+                    f"(no more, no less). Maintain data type variety: {type_instructions}."
+                )
             else:
-                num_features_instruction = f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less)."
+                num_features_instruction = (
+                    f"CRITICAL: Generate EXACTLY {num_features} features (no more, no less)."
+                )
         else:
-            num_features_instruction = f"CRITICAL: Generate EXACTLY {self.target_feature_count} diverse, high-quality features (no more, no less)."
+            num_features_instruction = (
+                f"CRITICAL: Generate EXACTLY {self.target_feature_count} diverse, "
+                "high-quality features (no more, no less)."
+            )
             if self.compact_mode:
                 num_features_instruction += " Keep descriptions SHORT."
 
         # Create the chain
-        chain = self.prompt | self.llm | self.parser
+        chain = self.prompt | self.llm | self.parser  # pylint: disable=unsupported-binary-operation
 
         # Generate features
         result = chain.invoke({
@@ -352,12 +376,12 @@ Please incorporate this feedback to improve the feature list.
             compact_output = CompactGeneratorOutput(**result)
             features = [f.to_feature() for f in compact_output.features]
             return GeneratorOutput(features=features, taxonomy_explanation="")
-        else:
-            output = GeneratorOutput(**result)
-            # Normalize feature names in full mode
-            for feature in output.features:
-                feature.name = self._normalize_feature_name(feature.name)
-            return output
+
+        output = GeneratorOutput(**result)
+        # Normalize feature names in full mode
+        for feature in output.features:
+            feature.name = self._normalize_feature_name(feature.name)
+        return output
 
     def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -394,7 +418,8 @@ Please incorporate this feedback to improve the feature list.
             # Combine kept + rejected as exclusion list
             excluded_names = kept_feature_names | rejected_names
 
-            print(f"Regeneration mode: keeping {len(kept_features)} features, generating {low_scoring_count} new ones")
+            print(f"Regeneration mode: keeping {len(kept_features)} features, "
+                  f"generating {low_scoring_count} new ones")
             print(f"Excluding {len(excluded_names)} names (kept + previously rejected)")
             if low_scoring_type_counts:
                 print(f"Type distribution to match: {low_scoring_type_counts}")
@@ -415,7 +440,8 @@ Please incorporate this feedback to improve the feature list.
 
             # Combine kept features with new features
             combined_features = kept_features + new_features
-            print(f"Combined: {len(kept_features)} kept + {len(new_features)} new = {len(combined_features)} total")
+            print(f"Combined: {len(kept_features)} kept + {len(new_features)} new = "
+                  f"{len(combined_features)} total")
 
             return {
                 "current_features": combined_features,
@@ -425,11 +451,11 @@ Please incorporate this feedback to improve the feature list.
                 "low_scoring_count": None,
                 "low_scoring_type_counts": None
             }
-        else:
-            # Initial generation: generate full set of features
-            output = self.generate(business_problem, feedback)
 
-            return {
-                "current_features": output.features,
-                "taxonomy_explanation": output.taxonomy_explanation
-            }
+        # Initial generation: generate full set of features
+        output = self.generate(business_problem, feedback)
+
+        return {
+            "current_features": output.features,
+            "taxonomy_explanation": output.taxonomy_explanation
+        }
