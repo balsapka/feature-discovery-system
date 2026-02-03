@@ -108,6 +108,132 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 - Reliable JSON/structured output
 - Same model as Summarizer = fewer model loads
 
+## Inference Parameters (ChatBedrockConverse)
+
+Recommended `max_tokens`, `temperature`, and `top_p` settings for each agent:
+
+### Parameter Summary Table
+
+| Agent | max_tokens | temperature | top_p | Rationale |
+|-------|------------|-------------|-------|-----------|
+| Summarizer | 2048 | 0.1 | 0.9 | Deterministic extraction, structured output |
+| Feature Generator | 4096 | 0.8 | 0.95 | Creative diversity, novel ideas |
+| Evaluator | 2048 | 0.0 | 1.0 | Maximum consistency, reproducible scores |
+| Ranker | 1024 | 0.2 | 0.9 | Mostly deterministic with slight flexibility |
+
+### Detailed Parameter Recommendations
+
+#### 1. Summarizer Agent
+
+```python
+ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=2048,
+    temperature=0.1,
+    top_p=0.9,
+)
+```
+
+**Rationale:**
+- **max_tokens=2048**: Summaries are typically 500-1500 tokens; buffer for complex schemas
+- **temperature=0.1**: Near-deterministic for consistent, faithful extraction
+- **top_p=0.9**: Slightly constrained to avoid hallucination in schema interpretation
+
+#### 2. Feature Generator Agent
+
+```python
+ChatBedrockConverse(
+    model="deepseek.v3-v1:0",
+    max_tokens=4096,
+    temperature=0.8,
+    top_p=0.95,
+)
+```
+
+**Rationale:**
+- **max_tokens=4096**: Features require detailed descriptions + reasoning; allow room for 10-20 features with explanations
+- **temperature=0.8**: High creativity for novel feature ideas; encourages exploration of feature space
+- **top_p=0.95**: Broad sampling for diverse outputs while avoiding completely random tokens
+
+#### 3. Evaluator Agent
+
+```python
+ChatBedrockConverse(
+    model="qwen-235b-a22b-2507-v1:0",
+    max_tokens=2048,
+    temperature=0.0,
+    top_p=1.0,
+)
+```
+
+**Rationale:**
+- **max_tokens=2048**: Scores + detailed feedback for each criterion
+- **temperature=0.0**: Greedy decoding ensures identical scores for identical inputs (critical for optimization loop convergence)
+- **top_p=1.0**: With temperature=0, top_p has no effect; set to 1.0 for clarity
+
+#### 4. Ranking/Top-K Select Agent
+
+```python
+ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=1024,
+    temperature=0.2,
+    top_p=0.9,
+)
+```
+
+**Rationale:**
+- **max_tokens=1024**: Final selection is compact; just ranked list with brief justifications
+- **temperature=0.2**: Mostly deterministic ranking with slight variation to break ties naturally
+- **top_p=0.9**: Standard constraint for structured output reliability
+
+### Parameter Guidelines by Task Type
+
+| Task Type | temperature | top_p | Use When |
+|-----------|-------------|-------|----------|
+| **Extraction/Parsing** | 0.0 - 0.2 | 0.9 | Faithful reproduction, no creativity needed |
+| **Creative Generation** | 0.7 - 1.0 | 0.9 - 0.95 | Novel ideas, diverse outputs, brainstorming |
+| **Analytical/Scoring** | 0.0 | 1.0 | Consistent, reproducible evaluations |
+| **Classification/Ranking** | 0.1 - 0.3 | 0.9 | Structured decisions with some flexibility |
+
+### Full Configuration Example
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+# Summarizer - deterministic extraction
+summarizer_llm = ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=2048,
+    temperature=0.1,
+    top_p=0.9,
+)
+
+# Feature Generator - creative exploration
+generator_llm = ChatBedrockConverse(
+    model="deepseek.v3-v1:0",
+    max_tokens=4096,
+    temperature=0.8,
+    top_p=0.95,
+)
+
+# Evaluator - consistent scoring
+evaluator_llm = ChatBedrockConverse(
+    model="qwen-235b-a22b-2507-v1:0",
+    max_tokens=2048,
+    temperature=0.0,
+    top_p=1.0,
+)
+
+# Ranker - structured selection
+ranker_llm = ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=1024,
+    temperature=0.2,
+    top_p=0.9,
+)
+```
+
 ## Cost-Optimized Configuration
 
 If minimizing cost while maintaining quality:
