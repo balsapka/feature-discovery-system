@@ -117,7 +117,7 @@ Recommended `max_tokens`, `temperature`, and `top_p` settings for each agent:
 | Agent | max_tokens | temperature | top_p | Rationale |
 |-------|------------|-------------|-------|-----------|
 | Summarizer | 2048 | 0.1 | 0.9 | Deterministic extraction, structured output |
-| Feature Generator | 4096 | 0.8 | 0.95 | Creative diversity, novel ideas |
+| Feature Generator | 4096 | 0.3 | 0.9 | Balanced creativity with consistency |
 | Evaluator | 2048 | 0.0 | 1.0 | Maximum consistency, reproducible scores |
 | Ranker | 1024 | 0.2 | 0.9 | Mostly deterministic with slight flexibility |
 
@@ -145,15 +145,15 @@ ChatBedrockConverse(
 ChatBedrockConverse(
     model="deepseek.v3-v1:0",
     max_tokens=4096,
-    temperature=0.8,
-    top_p=0.95,
+    temperature=0.3,
+    top_p=0.9,
 )
 ```
 
 **Rationale:**
 - **max_tokens=4096**: Features require detailed descriptions + reasoning; allow room for 10-20 features with explanations
-- **temperature=0.8**: High creativity for novel feature ideas; encourages exploration of feature space
-- **top_p=0.95**: Broad sampling for diverse outputs while avoiding completely random tokens
+- **temperature=0.3**: Low enough for consistent, reproducible outputs while allowing some variation for diverse feature ideas
+- **top_p=0.9**: Standard constraint for reliable structured output
 
 #### 3. Evaluator Agent
 
@@ -192,7 +192,7 @@ ChatBedrockConverse(
 | Task Type | temperature | top_p | Use When |
 |-----------|-------------|-------|----------|
 | **Extraction/Parsing** | 0.0 - 0.2 | 0.9 | Faithful reproduction, no creativity needed |
-| **Creative Generation** | 0.7 - 1.0 | 0.9 - 0.95 | Novel ideas, diverse outputs, brainstorming |
+| **Creative Generation** | 0.3 - 0.5 | 0.9 | Controlled creativity with reproducibility |
 | **Analytical/Scoring** | 0.0 | 1.0 | Consistent, reproducible evaluations |
 | **Classification/Ranking** | 0.1 - 0.3 | 0.9 | Structured decisions with some flexibility |
 
@@ -209,12 +209,12 @@ summarizer_llm = ChatBedrockConverse(
     top_p=0.9,
 )
 
-# Feature Generator - creative exploration
+# Feature Generator - balanced creativity with consistency
 generator_llm = ChatBedrockConverse(
     model="deepseek.v3-v1:0",
     max_tokens=4096,
-    temperature=0.8,
-    top_p=0.95,
+    temperature=0.3,
+    top_p=0.9,
 )
 
 # Evaluator - consistent scoring
@@ -253,8 +253,8 @@ summarizer_llm = ChatBedrockConverse(
 generator_llm = ChatBedrockConverse(
     model="deepseek.v3-v1:0",
     max_tokens=4096,
-    temperature=0.8,
-    top_p=0.95,
+    temperature=0.3,
+    top_p=0.9,
 )
 
 # Evaluator - good enough, much cheaper
@@ -296,8 +296,8 @@ summarizer_llm = ChatBedrockConverse(
 generator_llm = ChatBedrockConverse(
     model="moonshot.kimi-k2-thinking",
     max_tokens=4096,
-    temperature=0.8,
-    top_p=0.95,
+    temperature=0.3,
+    top_p=0.9,
 )
 
 # Evaluator - flagship model for critical evaluation
