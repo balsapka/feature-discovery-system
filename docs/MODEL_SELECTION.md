@@ -239,13 +239,42 @@ ranker_llm = ChatBedrockConverse(
 If minimizing cost while maintaining quality:
 
 ```python
-MODEL_CONFIG = {
-    "summarizer": "apac.amazon.nova-lite-v1:0",      # Cheapest, still capable
-    "generator": "deepseek.v3-v1:0",                  # Best value for reasoning
-    "evaluator": "qwen3-32b-v1:0",                    # Good enough, much cheaper
-    "embedder": "BgeLargeEmbeddings",                 # Faster, still effective
-    "ranker": "apac.amazon.nova-micro-v1:0",          # Simple task, use smallest
-}
+from langchain_aws import ChatBedrockConverse
+
+# Summarizer - cheapest, still capable
+summarizer_llm = ChatBedrockConverse(
+    model="apac.amazon.nova-lite-v1:0",
+    max_tokens=2048,
+    temperature=0.1,
+    top_p=0.9,
+)
+
+# Feature Generator - best value for reasoning
+generator_llm = ChatBedrockConverse(
+    model="deepseek.v3-v1:0",
+    max_tokens=4096,
+    temperature=0.8,
+    top_p=0.95,
+)
+
+# Evaluator - good enough, much cheaper
+evaluator_llm = ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=2048,
+    temperature=0.0,
+    top_p=1.0,
+)
+
+# Ranker - simple task, use smallest
+ranker_llm = ChatBedrockConverse(
+    model="apac.amazon.nova-micro-v1:0",
+    max_tokens=1024,
+    temperature=0.2,
+    top_p=0.9,
+)
+
+# Embedder - faster, still effective
+EMBEDDER_MODEL = "BgeLargeEmbeddings"
 ```
 
 ## Quality-Optimized Configuration
@@ -253,13 +282,42 @@ MODEL_CONFIG = {
 If maximizing output quality:
 
 ```python
-MODEL_CONFIG = {
-    "summarizer": "qwen3-32b-v1:0",                   # Solid extraction
-    "generator": "moonshot.kimi-k2-thinking",         # Best reasoning + creativity
-    "evaluator": "qwen-235b-a22b-2507-v1:0",          # Flagship for critical evaluation
-    "embedder": "Qwen3Embedding8b",                   # SOTA retrieval
-    "ranker": "deepseek.v3-v1:0",                     # Strong comparison ability
-}
+from langchain_aws import ChatBedrockConverse
+
+# Summarizer - deterministic extraction
+summarizer_llm = ChatBedrockConverse(
+    model="qwen3-32b-v1:0",
+    max_tokens=2048,
+    temperature=0.1,
+    top_p=0.9,
+)
+
+# Feature Generator - highest quality reasoning + creativity
+generator_llm = ChatBedrockConverse(
+    model="moonshot.kimi-k2-thinking",
+    max_tokens=4096,
+    temperature=0.8,
+    top_p=0.95,
+)
+
+# Evaluator - flagship model for critical evaluation
+evaluator_llm = ChatBedrockConverse(
+    model="qwen-235b-a22b-2507-v1:0",
+    max_tokens=2048,
+    temperature=0.0,
+    top_p=1.0,
+)
+
+# Ranker - strong comparison ability
+ranker_llm = ChatBedrockConverse(
+    model="deepseek.v3-v1:0",
+    max_tokens=1024,
+    temperature=0.2,
+    top_p=0.9,
+)
+
+# Embedder - SOTA retrieval
+EMBEDDER_MODEL = "Qwen3Embedding8b"
 ```
 
 ## Sources
