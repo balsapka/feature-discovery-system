@@ -260,6 +260,7 @@ Generate {focus_area} features as JSON."""
 
         # Run batches in parallel using ThreadPoolExecutor
         all_features = []
+        failed_batch_count = 0
         with ThreadPoolExecutor(max_workers=self.num_batches) as executor:
             futures = [
                 executor.submit(
@@ -277,6 +278,7 @@ Generate {focus_area} features as JSON."""
                     all_features.extend(batch_features)
                 except Exception as exc:  # pylint: disable=broad-exception-caught
                     print(f"Batch generation failed: {exc}")
+                    failed_batch_count += 1
 
         # Deduplicate by feature name
         seen_names = set()
@@ -285,6 +287,29 @@ Generate {focus_area} features as JSON."""
             if f.name not in seen_names:
                 seen_names.add(f.name)
                 unique_features.append(f)
+
+        # If we have fewer features than target due to failed batches, generate missing ones
+        missing_count = self.target_feature_count - len(unique_features)
+        if missing_count > 0 and failed_batch_count > 0:
+            print(f"Regenerating {missing_count} missing features from {failed_batch_count} "
+                  f"failed batch(es)")
+            try:
+                # Use sequential generation to fill in missing features
+                recovery_output = self.generate(
+                    business_problem,
+                    feedback,
+                    num_features=missing_count,
+                    excluded_names=seen_names
+                )
+                # Add non-duplicate features
+                for f in recovery_output.features:
+                    if f.name not in seen_names:
+                        seen_names.add(f.name)
+                        unique_features.append(f)
+                print(f"Successfully regenerated {len(recovery_output.features)} features, "
+                      f"total now: {len(unique_features)}")
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                print(f"Failed to regenerate missing features: {exc}")
 
         return GeneratorOutput(
             features=unique_features,
