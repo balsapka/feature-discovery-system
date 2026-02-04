@@ -4,13 +4,29 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 
 ## Summary Table
 
-| Agent/Task | Recommended Model | Alternative | Rationale |
-|------------|-------------------|-------------|-----------|
-| Summarizer | qwen3-32b-v1:0 | meta.llama3-70b-instruct | Balanced cost/performance, strong instruction following |
-| Feature Generator | deepseek.v3-v1:0 | moonshot.kimi-k2-thinking | Best reasoning + creativity at efficient cost |
-| Evaluator | qwen-235b-a22b-2507-v1:0 | mistral-large-3-675b-instruct | Highest analytical reasoning, consistent scoring |
-| Embedder | Qwen3Embedding8b | BgeLargeEmbeddings | SOTA on MTEB retrieval; BGE as fast fallback |
-| Ranking/Top-K Agent | qwen3-32b-v1:0 | apac.amazon.nova-pro-v1:0 | Good reasoning + fast for final selection |
+| Agent/Task | Recommended Model | Alternative (Quality) | Alternative (Budget) | Rationale |
+|------------|-------------------|----------------------|---------------------|-----------|
+| Summarizer | qwen3-32b-v1:0 | claude-haiku-4-5 | nova-lite | Balanced cost/performance, strong instruction following |
+| Feature Generator | deepseek.v3-v1:0 | claude-opus-4-5 | deepseek.v3 | Best reasoning + creativity at efficient cost |
+| Evaluator | qwen-235b-a22b-2507-v1:0 | claude-opus-4-5 | qwen3-32b | Highest analytical reasoning, consistent scoring |
+| Embedder | Qwen3Embedding8b | Qwen3Embedding8b | BgeLargeEmbeddings | SOTA on MTEB retrieval; BGE as fast fallback |
+| Ranking/Top-K Agent | qwen3-32b-v1:0 | claude-sonnet-4-5 | nova-micro | Good reasoning + fast for final selection |
+
+## Claude 4.5 Models Overview
+
+The following Claude 4.5 models are available on Amazon Bedrock:
+
+| Model | Model ID | MMLU | GPQA | Reasoning | Structured Output | Cost | Speed |
+|-------|----------|------|------|-----------|-------------------|------|-------|
+| Claude Opus 4.5 | anthropic.claude-opus-4-5-20251101-v1:0 | ~92+ | ~85+ | SOTA | Excellent | Very High | Slow |
+| Claude Sonnet 4.5 | anthropic.claude-sonnet-4-5-20250929-v1:0 | ~90 | ~80 | Excellent | Excellent | Medium-High | Medium |
+| Claude Haiku 4.5 | anthropic.claude-haiku-4-5-20251001-v1:0 | ~85 | ~70 | Good | Excellent | Low | Fast |
+
+**Key advantages of Claude 4.5 models:**
+- Superior instruction following and structured output reliability
+- Excellent at maintaining consistent behavior across runs
+- Strong reasoning with clear explanations
+- Native support for complex JSON schemas
 
 ## Detailed Analysis by Task
 
@@ -20,7 +36,8 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 
 | Model | MMLU | IFEval | Structured Output | Cost | Recommendation |
 |-------|------|--------|-------------------|------|----------------|
-| qwen3-32b-v1:0 | 68.7 (Pro) | High | Excellent | Low | ✅ Best Pick |
+| qwen3-32b-v1:0 | 68.7 (Pro) | High | Excellent | Low | ✅ Best Pick (Balanced) |
+| claude-haiku-4-5 | ~85 | Very High | Excellent | Low | ✅ Best Pick (Quality) |
 | meta.llama3-70b-instruct | 86.0 | 92.1 | Good | Medium | Good alternative |
 | apac.amazon.nova-lite-v1:0 | ~80 | Good | Good | Very Low | Budget option |
 
@@ -36,8 +53,10 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 
 | Model | MMLU | GPQA | Math/Reasoning | Creativity | Cost | Recommendation |
 |-------|------|------|----------------|------------|------|----------------|
-| deepseek.v3-v1:0 | 88.5 | 59.1 | SOTA | High | Low | ✅ Best Pick |
-| moonshot.kimi-k2-thinking | ~85 | 85.7 | SOTA | Very High | Medium | Best quality |
+| deepseek.v3-v1:0 | 88.5 | 59.1 | SOTA | High | Low | ✅ Best Pick (Balanced) |
+| claude-opus-4-5 | ~92+ | ~85+ | SOTA | Very High | Very High | ✅ Best Pick (Quality) |
+| claude-sonnet-4-5 | ~90 | ~80 | Excellent | High | Medium-High | Quality alternative |
+| moonshot.kimi-k2-thinking | ~85 | 85.7 | SOTA | Very High | Medium | Strong alternative |
 | qwen-235b-a22b-2507-v1:0 | 76.6+ | High | 85.1 AIME | High | Medium | Strong alternative |
 
 **Recommendation: deepseek.v3-v1:0**
@@ -57,7 +76,9 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 
 | Model | MMLU-Pro | GPQA | Consistency | Analytical | Cost |
 |-------|----------|------|-------------|------------|------|
-| qwen-235b-a22b-2507-v1:0 | High | High | Very High | Excellent | Medium |
+| claude-opus-4-5 | ~90+ | ~85+ | Highest | Excellent | Very High | ✅ Best Pick (Quality) |
+| qwen-235b-a22b-2507-v1:0 | High | High | Very High | Excellent | Medium | ✅ Best Pick (Balanced) |
+| claude-sonnet-4-5 | ~85 | ~80 | Very High | Excellent | Medium-High | Quality alternative |
 | mistral-large-3-675b-instruct | 78% | 71.2% | High | Excellent | Medium |
 | deepseek.v3-v1:0 | 75.9 | 59.1 | High | Good | Low |
 
@@ -98,7 +119,9 @@ Based on benchmark research, here are my rigorous recommendations for each compo
 
 | Model | Reasoning | Speed | Structured Output | Cost |
 |-------|-----------|-------|-------------------|------|
-| qwen3-32b-v1:0 | Good | Fast | Excellent | Low |
+| qwen3-32b-v1:0 | Good | Fast | Excellent | Low | ✅ Best Pick (Balanced) |
+| claude-sonnet-4-5 | Excellent | Medium | Excellent | Medium-High | ✅ Best Pick (Quality) |
+| claude-haiku-4-5 | Good | Fast | Excellent | Low | Fast alternative |
 | apac.amazon.nova-pro-v1:0 | 85.9 MMLU | Fast | Good | Low |
 | meta.llama3-70b-instruct | 86.0 MMLU | Medium | Good | Medium |
 
@@ -277,9 +300,58 @@ ranker_llm = ChatBedrockConverse(
 EMBEDDER_MODEL = "BgeLargeEmbeddings"
 ```
 
-## Quality-Optimized Configuration
+## Quality-Optimized Configuration (Claude 4.5)
 
-If maximizing output quality:
+If maximizing output quality using Claude 4.5 models:
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+# Summarizer - fast, excellent instruction following
+summarizer_llm = ChatBedrockConverse(
+    model="anthropic.claude-haiku-4-5-20251001-v1:0",
+    max_tokens=2048,
+    temperature=0.1,
+    top_p=0.9,
+)
+
+# Feature Generator - best reasoning + creativity with reproducibility
+generator_llm = ChatBedrockConverse(
+    model="anthropic.claude-opus-4-5-20251101-v1:0",
+    max_tokens=4096,
+    temperature=0.3,
+    top_p=0.9,
+)
+
+# Evaluator - most consistent scoring, best analytical reasoning
+evaluator_llm = ChatBedrockConverse(
+    model="anthropic.claude-opus-4-5-20251101-v1:0",
+    max_tokens=2048,
+    temperature=0.0,
+    top_p=1.0,
+)
+
+# Ranker - excellent comparison, reliable structured output
+ranker_llm = ChatBedrockConverse(
+    model="anthropic.claude-sonnet-4-5-20250929-v1:0",
+    max_tokens=1024,
+    temperature=0.2,
+    top_p=0.9,
+)
+
+# Embedder - SOTA retrieval
+EMBEDDER_MODEL = "Qwen3Embedding8b"
+```
+
+**Rationale for Claude 4.5 Quality Config:**
+- **Haiku 4.5 for Summarizer**: Fast inference, excellent instruction following for extraction tasks
+- **Opus 4.5 for Generator**: SOTA reasoning and creativity, superior structured output reliability
+- **Opus 4.5 for Evaluator**: Most consistent scoring, unmatched analytical depth (critical for optimization loop)
+- **Sonnet 4.5 for Ranker**: Strong comparison ability, good balance of quality and speed
+
+## Quality-Optimized Configuration (Non-Claude)
+
+If maximizing output quality without Claude models:
 
 ```python
 from langchain_aws import ChatBedrockConverse
@@ -322,6 +394,8 @@ EMBEDDER_MODEL = "Qwen3Embedding8b"
 
 ## Sources
 
+- [Claude 4.5 Model Card (Anthropic)](https://www.anthropic.com/claude)
+- [Claude on Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html)
 - [Qwen3 Technical Report (arXiv)](https://arxiv.org/abs/2505.09388)
 - [DeepSeek V3 Technical Report (arXiv)](https://arxiv.org/abs/2412.19437)
 - [Kimi K2 GitHub](https://github.com/MoonshotAI/Kimi-K2)
